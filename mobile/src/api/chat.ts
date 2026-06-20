@@ -74,6 +74,7 @@ export type ChatSearchResponse = {
   offers?: FlightOffer[];
   questions?: string[];
   suggestions?: string[];
+  pendingFields?: string[];
   normalization?: {
     policy?: string;
     requiresUserConfirmation?: boolean;

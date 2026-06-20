@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "flight-app",
-    "slug": "flight-app",
+    "name": "Skylin",
+    "slug": "skylin",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "flightapp",
+    "scheme": "skylin",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true

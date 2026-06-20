@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -48,6 +49,8 @@ const featureCards = [
 type AuthMode = 'signin' | 'signup' | 'reset';
 
 export default function LoginScreen() {
+  const { width: screenWidth } = useWindowDimensions();
+  const isWide = screenWidth >= 768;
   const { user, signIn, signUp, resetPassword, authLoading, hasFirebaseConfig } = useAuth();
   const { profileLoading } = useUserProfile();
 
@@ -114,6 +117,7 @@ export default function LoginScreen() {
       ])
     ).start();
   }, [cardFade, cardShift, glowScale, heroFade, heroShift]);
+
 
   const title = useMemo(() => {
     if (mode === 'signup') return 'Create your travel identity';
@@ -182,6 +186,12 @@ export default function LoginScreen() {
       <View style={styles.background}>
         <View style={styles.orbWarm} />
         <View style={styles.orbCool} />
+        <View style={styles.orbAccentMid} />
+        <View style={styles.orbPrimaryBR} />
+        <View style={styles.orbTinyTL} />
+        <View style={styles.ringLarge} />
+        <View style={styles.ringMedium} />
+        <View style={styles.ringSmall} />
         <View style={styles.gridVeil} />
       </View>
 
@@ -202,7 +212,7 @@ export default function LoginScreen() {
             <View style={styles.topRow}>
               <View style={styles.brandPill}>
                 <MaterialCommunityIcons name="airplane-takeoff" size={16} color={Colors.textOnDark} />
-                <Text style={styles.brandPillText}>Flight App LLM</Text>
+                <Text style={styles.brandPillText}>Skylin</Text>
               </View>
 
               <View style={[styles.statusPill, !hasFirebaseConfig && styles.statusPillWarn]}>
@@ -210,11 +220,43 @@ export default function LoginScreen() {
               </View>
             </View>
 
-            <Text style={styles.heroEyebrow}>Editorial travel assistant</Text>
-            <Text style={styles.heroTitle}>A flight search experience with memory, taste, and speed.</Text>
-            <Text style={styles.heroSubtitle}>
-              Save route intent, reopen searches instantly, and move from inspiration to live results without losing context.
-            </Text>
+            {isWide ? (
+              <View style={styles.heroWrapper}>
+                <View style={styles.heroTextColumn}>
+                  <Text style={styles.heroEyebrow}>Editorial travel assistant</Text>
+                  <Text style={styles.heroTitle}>A flight search experience with memory, taste, and speed.</Text>
+                  <Text style={styles.heroSubtitle}>
+                    Save route intent, reopen searches instantly, and move from inspiration to live results without losing context.
+                  </Text>
+                </View>
+                <View style={styles.heroLottieContainer}>
+                  <LottieView
+                    source={require('../assets/World map.json')}
+                    autoPlay
+                    loop
+                    resizeMode="contain"
+                    style={styles.heroLottie}
+                  />
+                </View>
+              </View>
+            ) : (
+              <View style={styles.heroWrapperMobile}>
+                <View style={styles.heroLottieContainerMobile}>
+                  <LottieView
+                    source={require('../assets/World map.json')}
+                    autoPlay
+                    loop
+                    resizeMode="contain"
+                    style={styles.heroLottieMobile}
+                  />
+                </View>
+                <Text style={styles.heroEyebrow}>Editorial travel assistant</Text>
+                <Text style={styles.heroTitle}>A flight search experience with memory, taste, and speed.</Text>
+                <Text style={styles.heroSubtitle}>
+                  Save route intent, reopen searches instantly, and move from inspiration to live results without losing context.
+                </Text>
+              </View>
+            )}
 
             <View style={styles.featureStack}>
               {featureCards.map((feature, index) => (
@@ -441,6 +483,72 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accent,
     opacity: 0.14,
   },
+  orbAccentMid: {
+    position: 'absolute',
+    top: '35%',
+    right: 60,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: Colors.accent,
+    opacity: 0.08,
+  },
+  orbPrimaryBR: {
+    position: 'absolute',
+    bottom: 160,
+    right: -30,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: Colors.primary,
+    opacity: 0.10,
+  },
+  orbTinyTL: {
+    position: 'absolute',
+    top: 80,
+    left: 60,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: Colors.primary,
+    opacity: 0.11,
+  },
+  ringLarge: {
+    position: 'absolute',
+    top: '20%',
+    left: '25%',
+    width: 340,
+    height: 340,
+    borderRadius: 170,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    backgroundColor: 'transparent',
+    opacity: 0.13,
+  },
+  ringMedium: {
+    position: 'absolute',
+    bottom: 120,
+    right: 180,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    backgroundColor: 'transparent',
+    opacity: 0.15,
+  },
+  ringSmall: {
+    position: 'absolute',
+    top: 100,
+    right: 260,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    backgroundColor: 'transparent',
+    opacity: 0.18,
+  },
   gridVeil: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255, 250, 245, 0.78)',
@@ -489,6 +597,40 @@ const styles = StyleSheet.create({
     fontFamily: Typography.sansBold,
     fontSize: 11,
   },
+  heroWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 16,
+  },
+  heroWrapperMobile: {
+    marginBottom: 16,
+  },
+  heroLottieContainerMobile: {
+    width: 220,
+    height: 165,
+    overflow: 'hidden',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  heroLottieMobile: {
+    width: 220,
+    height: 165,
+  },
+  heroTextColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  heroLottieContainer: {
+    width: 560,
+    height: 420,
+    flexShrink: 0,
+    overflow: 'hidden',
+  },
+  heroLottie: {
+    width: 560,
+    height: 420,
+  },
   heroEyebrow: {
     color: Colors.accent,
     fontFamily: Typography.sansBold,
@@ -500,10 +642,9 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: Colors.textPrimary,
     fontFamily: Typography.display,
-    fontSize: 42,
-    lineHeight: 44,
+    fontSize: 38,
+    lineHeight: 42,
     marginBottom: 12,
-    maxWidth: 340,
   },
   heroSubtitle: {
     color: Colors.textSecondary,

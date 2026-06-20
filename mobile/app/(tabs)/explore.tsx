@@ -22,7 +22,7 @@ const quickIdeas = [
   },
   {
     title: 'Warm reset',
-    note: 'Sun, direct when possible',
+    note: 'Sun, beach, direct when possible',
     prompt: 'Take me somewhere warm and sunny under 300 euro round trip',
     icon: 'white-balance-sunny',
   },
@@ -31,6 +31,24 @@ const quickIdeas = [
     note: 'Museums, walkability, quick escape',
     prompt: 'A cultural weekend in Europe under 250 euro, direct if possible',
     icon: 'bank',
+  },
+  {
+    title: 'Mountain escape',
+    note: 'Snow, alpine air, off-season calm',
+    prompt: 'A snowy mountain trip in Europe under 400 euro round trip',
+    icon: 'image-filter-hdr',
+  },
+  {
+    title: 'Vibrant nightlife',
+    note: 'Energy, music, city pulse',
+    prompt: 'A vibrant city with great nightlife, economy class under 300 euro',
+    icon: 'music-note',
+  },
+  {
+    title: 'Luxury long weekend',
+    note: 'Business class, premium destination',
+    prompt: 'A luxury long weekend in Milan or Paris, business class round trip',
+    icon: 'star-outline',
   },
 ];
 
@@ -284,29 +302,6 @@ export default function TripsScreen() {
           </View>
         </AnimatedCard>
 
-        <AnimatedCard delay={600}>
-          <View style={styles.styleCard}>
-            <View style={styles.sectionHeaderCompact}>
-              <Text style={styles.sectionEyebrow}>Travel signature</Text>
-              <Text style={styles.sectionTitle}>Your preference moodboard</Text>
-            </View>
-
-            <View style={styles.preferenceChipWrap}>
-              <View style={styles.preferenceChip}>
-                <Text style={styles.preferenceLabel}>Cabin</Text>
-                <Text style={styles.preferenceValue}>{profile.cabinStyle}</Text>
-              </View>
-              <View style={styles.preferenceChip}>
-                <Text style={styles.preferenceLabel}>Pace</Text>
-                <Text style={styles.preferenceValue}>{profile.tripPace}</Text>
-              </View>
-              <View style={[styles.preferenceChip, styles.preferenceChipFull]}>
-                <Text style={styles.preferenceLabel}>Booking mode</Text>
-                <Text style={styles.preferenceValue}>{profile.bookingMode}</Text>
-              </View>
-            </View>
-          </View>
-        </AnimatedCard>
       </ScrollView>
     </SafeAreaView>
   );
@@ -413,9 +408,6 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     marginTop: 4,
-  },
-  sectionHeaderCompact: {
-    marginBottom: 14,
   },
   sectionEyebrow: {
     color: Colors.accent,
@@ -585,42 +577,5 @@ const styles = StyleSheet.create({
     fontFamily: Typography.sans,
     fontSize: 13,
     lineHeight: 19,
-  },
-  styleCard: {
-    backgroundColor: Colors.surfaceRaised,
-    borderRadius: Radius.xl,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
-  },
-  preferenceChipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  preferenceChip: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: Colors.surfaceSoft,
-    borderRadius: Radius.lg,
-    padding: 14,
-  },
-  preferenceChipFull: {
-    flexBasis: '100%',
-    flex: 0,
-  },
-  preferenceLabel: {
-    color: Colors.textMuted,
-    fontFamily: Typography.sansBold,
-    fontSize: 11,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  preferenceValue: {
-    color: Colors.textPrimary,
-    fontFamily: Typography.sansSemiBold,
-    fontSize: 15,
   },
 });

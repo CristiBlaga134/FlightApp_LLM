@@ -1103,77 +1103,55 @@ async function readSearchFormValues(page, originInputHandle, destinationInputHan
 }
 
 async function submitSearch(page, referenceInput = null, options = {}) {
-  const searchButtonPattern = /c[aă]ut/i;
+  // Primary: evaluate-based search across entire document.
+  // Uses ̀-ͯ Unicode escapes (safe for serialization) to strip diacritics
+  // so /caut/ matches "căutare", "cauta", "caută" etc.
+  const clicked = await page.evaluate(() => {
+    const isExcluded = (el) => /reset|inchid|schimb|close|anterior|urmator|slide|redare/i.test(el.getAttribute("aria-label") || "");
 
-  // Playwright-native path: click the clearly-labelled search button.
-  try {
-    const textBtn = page.getByRole("button", { name: searchButtonPattern })
-      .or(page.locator("button, [role='button']").filter({ hasText: searchButtonPattern }));
-    if (await textBtn.count() > 0) {
-      await textBtn.first().click({ timeout: 3000 });
-      console.log("[ESKY] Search submitted via Playwright text button");
-      return true;
+    // Primary: find the search button by position — it sits to the right of the date input
+    // in the same horizontal band, with no text/aria-label (eSky uses a bare icon button).
+    const dateInput = document.getElementById("dates_from");
+    if (dateInput) {
+      const dateRect = dateInput.getBoundingClientRect();
+      const candidates = Array.from(document.querySelectorAll("button, [role='button']"))
+        .filter((el) => {
+          if (isExcluded(el)) return false;
+          const rect = el.getBoundingClientRect();
+          return (
+            rect.width > 30 &&
+            rect.height > 30 &&
+            rect.left > dateRect.right &&
+            Math.abs(rect.top + rect.height / 2 - (dateRect.top + dateRect.height / 2)) < 60
+          );
+        })
+        .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+
+      if (candidates.length > 0) {
+        candidates[0].click();
+        const lbl = (candidates[0].getAttribute("aria-label") || candidates[0].textContent || "").trim().slice(0, 40);
+        return { mode: "position-based", label: lbl || "(no label)" };
+      }
     }
-  } catch {
-    // fall through to evaluate-based fallback
-  }
 
-  const submitResult = await page.evaluate((inputEl) => {
-    const root = inputEl
-      ? inputEl.closest("form, section, [class*='qsf'], [class*='search']") || document
-      : document;
-    const buttons = Array.from(root.querySelectorAll("button, [role='button']"))
-      .filter((el) => {
-        const rect = el.getBoundingClientRect();
-        return rect.width > 20 && rect.height > 20;
-      });
-
-    const textButton = buttons.find((el) => {
-      const text = (el.textContent || "").trim().toLowerCase();
-      const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
-      return /caut/.test(text) || /caut/.test(aria);
+    // Fallback: text button ("Căutare" / "Caută") using explicit diacritic regex
+    const isSearchText = (s) => /c[aă]ut/i.test(String(s || ""));
+    const allButtons = Array.from(document.querySelectorAll("button, [role='button']")).filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 20 && rect.height > 20 && !isExcluded(el);
     });
 
-    if (textButton) {
-      textButton.click();
-      return { triggered: true, mode: "text-button" };
+    const textBtn = allButtons.find((el) => isSearchText(el.textContent || ""));
+    if (textBtn) {
+      textBtn.click();
+      return { mode: "text-button", label: (textBtn.textContent || "").trim().slice(0, 40) };
     }
 
-    const iconCandidates = buttons
-      .map((el) => {
-        const rect = el.getBoundingClientRect();
-        const text = (el.textContent || "").trim();
-        const aria = (el.getAttribute("aria-label") || "").trim().toLowerCase();
-        const hasSvg = Boolean(el.querySelector("svg, i"));
-        const looksSearchByAria = /caut|search|find|lupa/.test(aria);
-        const looksIconOnly = text.length === 0;
-        const looksRound = Math.abs(rect.width - rect.height) < 14 && rect.width >= 32;
-        return {
-          el,
-          score:
-            (looksSearchByAria ? 100 : 0) +
-            (looksIconOnly ? 40 : 0) +
-            (hasSvg ? 30 : 0) +
-            (looksRound ? 20 : 0) +
-            Math.round(rect.left / 10),
-        };
-      })
-      .sort((a, b) => b.score - a.score);
+    return null;
+  });
 
-    const iconButton = iconCandidates[0]?.el || null;
-
-    if (!iconButton) {
-      return { triggered: false, mode: "none" };
-    }
-
-    iconButton.click();
-    return { triggered: true, mode: "magnifier-button" };
-  }, referenceInput);
-
-  let triggered = Boolean(submitResult?.triggered);
-
-  if (triggered) {
-    console.log(`[ESKY] Search submitted via ${submitResult.mode}`);
+  if (clicked) {
+    console.log(`[ESKY] Search submitted via ${clicked.mode}: "${clicked.label}"`);
     return true;
   }
 
@@ -1182,14 +1160,14 @@ async function submitSearch(page, referenceInput = null, options = {}) {
       await referenceInput.focus();
       await page.keyboard.press("Enter");
       await delay(250);
-      triggered = true;
       console.log("[ESKY] Search submit fallback via Enter key");
+      return true;
     } catch {
       // ignore element focus failures; caller will handle non-triggered state
     }
   }
 
-  return triggered;
+  return false;
 }
 
 async function fillDateInputs(page, departureDate, returnDate, tripType) {
@@ -2008,7 +1986,7 @@ async function scrapeResults(page, searchQuery, normalizedSearch = null) {
 
 async function searchESky(searchQuery) {
   const startTime = Date.now();
-  console.log(`[ESKY] Starting direct eSky search for ${searchQuery.originCity} -> ${searchQuery.destinationCity}`);
+  console.log(`[ESKY] Starting eSky search for ${searchQuery.originCity} -> ${searchQuery.destinationCity}`);
   let context = null;
 
   if (scrapingInProgress) {
@@ -2080,7 +2058,7 @@ async function searchESky(searchQuery) {
       comboboxes[1],
       destinationValue,
       normalizeCity(searchQuery.destinationCity),
-      resolveAirportCode(normalizeCity(searchQuery.destinationCity), searchQuery.destinationAirportCode),
+      expectedDestinationCode,
       "Destination"
     );
     await fillDateInputs(page, searchQuery.departureDate, searchQuery.returnDate, searchQuery.tripType);
@@ -2088,34 +2066,30 @@ async function searchESky(searchQuery) {
     const postDateComboboxes = await page.$$('[role="combobox"]');
     const destinationCombobox = postDateComboboxes[1] || comboboxes[1];
 
-    try {
-      await destinationCombobox.click();
-      await delay(180);
-      console.log("[ESKY] Returned focus to destination after date selection");
-    } catch {
-      console.log("[ESKY] Could not return focus to destination after date selection");
+    // Check if destination is still set after date picker interactions.
+    // Avoid re-entering if already valid — touching the field triggers site auto-normalization
+    // that can clear the value.
+    const destAfterDates = await destinationCombobox.evaluate((el, code) => {
+      const val = String(el.value || "").trim();
+      return { value: val, valid: code ? val.toUpperCase().includes(code) : val.length > 2 };
+    }, expectedDestinationCode || "");
+
+    console.log(`[ESKY] Destination after date fill: "${destAfterDates.value}" (valid: ${destAfterDates.valid})`);
+
+    if (!destAfterDates.valid) {
+      console.log("[ESKY] Destination was cleared by date selection, re-entering without blur...");
+      await setComboboxValue(
+        page,
+        destinationCombobox,
+        destinationValue,
+        normalizeCity(searchQuery.destinationCity),
+        expectedDestinationCode,
+        "Destination re-entry",
+        { blurAfterSelection: false, explicitBlurAfterSelection: false, skipSelectionVerification: false }
+      );
+    } else {
+      console.log("[ESKY] Destination still valid after date selection, skipping re-entry");
     }
-
-    await setComboboxValue(
-      page,
-      destinationCombobox,
-      destinationValue,
-      normalizeCity(searchQuery.destinationCity),
-      expectedDestinationCode,
-      "Destination confirmation",
-      {
-        blurAfterSelection: false,
-        explicitBlurAfterSelection: true,
-        skipSelectionVerification: true,
-      }
-    );
-    console.log("[ESKY] Destination reconfirmed after date selection, moving directly to magnifier submit");
-
-    console.log(
-      searchQuery.tripType === "round_trip" && searchQuery.returnDate
-        ? "[ESKY] Round-trip dates selected, pressing magnifier"
-        : "[ESKY] One-way departure selected, pressing magnifier"
-    );
 
     const initialSubmitTriggered = await submitSearch(page, destinationCombobox, {
       preferMagnifier: true,

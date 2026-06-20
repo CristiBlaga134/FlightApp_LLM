@@ -623,9 +623,6 @@ export default function CheckoutScreen() {
             <View style={styles.heroOrbCool} />
             <Text style={styles.heroEyebrow}>Checkout demo</Text>
             <Text style={styles.heroTitle}>Finish the booking journey inside the app.</Text>
-            <Text style={styles.heroSubtitle}>
-              The flow now moves like a guided slideshow: traveler details, payment confirmation, then the billing address and final amount review.
-            </Text>
 
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Selected fare</Text>
@@ -638,36 +635,6 @@ export default function CheckoutScreen() {
               ) : null}
             </View>
           </View>
-
-          <View style={styles.noticeCard}>
-            <MaterialCommunityIcons name='flask-outline' size={18} color={Colors.accent} />
-            <Text style={styles.noticeText}>
-              {providerConfig
-                ? `${providerConfig.activeProvider} adapter active. Routes ready: ${providerConfig.routes.createSession}, ${providerConfig.routes.confirm}, ${providerConfig.routes.webhook}.`
-                : 'Preparing payment adapter and Stripe-compatible routes.'}
-            </Text>
-          </View>
-
-          {providerConfig ? (
-            <View style={styles.providerCard}>
-              <View style={styles.providerRow}>
-                <Text style={styles.providerLabel}>Integration shape</Text>
-                <Text style={styles.providerValue}>{providerConfig.integrationShape}</Text>
-              </View>
-              <View style={styles.providerRow}>
-                <Text style={styles.providerLabel}>Active adapter</Text>
-                <Text style={styles.providerValue}>{providerConfig.activeProvider}</Text>
-              </View>
-              <View style={styles.providerRow}>
-                <Text style={styles.providerLabel}>Stripe keys</Text>
-                <Text style={styles.providerValue}>
-                  {providerConfig.stripePlaceholders.publishableKeyConfigured || providerConfig.stripePlaceholders.secretKeyConfigured
-                    ? 'Partially configured'
-                    : 'Placeholders only'}
-                </Text>
-              </View>
-            </View>
-          ) : null}
 
           <View style={styles.stepMetaCard}>
             <View style={styles.stepPillRow}>
@@ -1429,8 +1396,8 @@ const styles = StyleSheet.create({
     ...Shadows.card,
   },
   confirmationLottie: {
-    width: 200,
-    height: 200,
+    width: 280,
+    height: 280,
     alignSelf: 'center',
   },
   confirmationEyebrow: {

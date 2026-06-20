@@ -1640,6 +1640,7 @@ if (missing.length > 0) {
     mode: "clarification",
     questions,
     suggestions,
+    pendingFields: askNow,
     extracted: sessionState
   });
 }

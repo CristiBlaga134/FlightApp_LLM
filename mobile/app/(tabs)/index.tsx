@@ -21,6 +21,7 @@ import {
   resetChatSession,
   sendChatMessage,
 } from "../../src/api/chat";
+import { InlineDatePicker } from "../../components/InlineDatePicker";
 import { fetchBackendHealth, HealthResponse } from "../../src/api/health";
 import { useUserProfile } from "../../src/context/UserProfileContext";
 import {
@@ -80,6 +81,11 @@ type Message = {
   normalizedDateNote?: string | null;
   comparisonSummary?: string | null;
   cheapestOfferId?: string | null;
+  datePicker?: {
+    needsDeparture: boolean;
+    needsReturn: boolean;
+    tripType: "one_way" | "round_trip" | null;
+  } | null;
 };
 
 function parseSuggestionsFromQuestions(questions: string[] | undefined) {
@@ -558,6 +564,17 @@ export default function ChatScreen() {
           ? result.suggestions
           : parseSuggestionsFromQuestions(result.questions);
 
+        const pf = result.pendingFields ?? [];
+        const needsDeparture = pf.includes("departureDate");
+        const needsReturn = pf.includes("returnDate");
+        const datePicker = (needsDeparture || needsReturn)
+          ? {
+              needsDeparture,
+              needsReturn,
+              tripType: result.extracted?.tripType ?? null,
+            }
+          : null;
+
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === typingId
@@ -568,6 +585,7 @@ export default function ChatScreen() {
                     result.questions?.join("\n") ??
                     "I need a few more details to refine your trip.",
                   suggestions,
+                  datePicker,
                 }
               : msg
           )
@@ -787,6 +805,16 @@ export default function ChatScreen() {
                         {item.text}
                       </Text>
                     )}
+
+                    {item.datePicker && !item.typing ? (
+                      <InlineDatePicker
+                        needsDeparture={item.datePicker.needsDeparture}
+                        needsReturn={item.datePicker.needsReturn}
+                        tripType={item.datePicker.tripType}
+                        onConfirm={(text) => sendMessage(text)}
+                        disabled={isSending}
+                      />
+                    ) : null}
 
                     {item.offers && item.offers.length > 0 ? (
                       <View style={styles.offersList}>

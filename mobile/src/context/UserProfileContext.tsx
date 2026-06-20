@@ -17,7 +17,11 @@ import type { FlightOffer } from '../api/chat';
 
 export type UserProfile = {
   firstName: string;
+  lastName: string;
   email: string;
+  gender: 'male' | 'female' | 'other' | '';
+  phoneNumber: string;
+  dateOfBirth: string;
   cabinStyle: string;
   tripPace: string;
   bookingMode: string;
@@ -65,7 +69,11 @@ export type SavedBooking = {
 
 const defaultProfile: UserProfile = {
   firstName: 'Alex',
+  lastName: '',
   email: 'alex@example.com',
+  gender: '',
+  phoneNumber: '',
+  dateOfBirth: '',
   cabinStyle: 'Economy first',
   tripPace: 'City breaks & weekends',
   bookingMode: 'Flexible suggestions',
@@ -165,9 +173,15 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
           firstName: typeof remote.firstName === 'string' && remote.firstName.trim().length > 0
             ? remote.firstName
             : deriveFirstNameFromEmail(user.email),
+          lastName: typeof remote.lastName === 'string' ? remote.lastName : '',
           email: typeof remote.email === 'string' && remote.email.trim().length > 0
             ? remote.email
             : (user.email || defaultProfile.email),
+          gender: (remote.gender === 'male' || remote.gender === 'female' || remote.gender === 'other')
+            ? remote.gender
+            : '',
+          phoneNumber: typeof remote.phoneNumber === 'string' ? remote.phoneNumber : '',
+          dateOfBirth: typeof remote.dateOfBirth === 'string' ? remote.dateOfBirth : '',
           cabinStyle: typeof remote.cabinStyle === 'string' && remote.cabinStyle.trim().length > 0
             ? remote.cabinStyle
             : defaultProfile.cabinStyle,

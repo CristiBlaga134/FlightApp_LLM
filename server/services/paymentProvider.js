@@ -1,6 +1,6 @@
 const PAYMENT_SESSION_TTL_MS = 30 * 60 * 1000;
 const MAX_PAYMENT_SESSIONS = 200;
-const MERCHANT_DISPLAY_NAME = process.env.PAYMENT_MERCHANT_DISPLAY_NAME || "Flight App LLM";
+const MERCHANT_DISPLAY_NAME = process.env.PAYMENT_MERCHANT_DISPLAY_NAME || "Skylin";
 const ACTIVE_PROVIDER_NAME = "mock";
 const paymentSessions = new Map();
 

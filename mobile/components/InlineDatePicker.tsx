@@ -15,21 +15,15 @@ const DAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 type DateVal = { year: number; month: number; day: number } | null;
 
-function isoToVal(iso: string | null): DateVal {
-  if (!iso) return null;
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return null;
-  return { year: y, month: m, day: d };
-}
-
-function valToIso(v: DateVal): string {
-  if (!v) return "";
-  return `${v.year}-${String(v.month).padStart(2, "0")}-${String(v.day).padStart(2, "0")}`;
-}
 
 function formatDisplay(v: DateVal): string {
   if (!v) return "";
   return `${String(v.day).padStart(2, "0")} ${MONTH_SHORT[v.month - 1]} ${v.year}`;
+}
+
+function formatForLLM(v: DateVal): string {
+  if (!v) return "";
+  return `${v.year}-${String(v.month).padStart(2, "0")}-${String(v.day).padStart(2, "0")}`;
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -111,11 +105,11 @@ export function InlineDatePicker({ needsDeparture, needsReturn, tripType, onConf
 
   const handleConfirm = () => {
     if (isRound && departure && returnD) {
-      onConfirm(`Departing ${formatDisplay(departure)}, returning ${formatDisplay(returnD)}`);
+      onConfirm(`${formatForLLM(departure)} ${formatForLLM(returnD)}`);
     } else if (!isRound && departure) {
-      onConfirm(`Departing ${formatDisplay(departure)}`);
+      onConfirm(formatForLLM(departure));
     } else if (!needsDeparture && returnD) {
-      onConfirm(`Returning ${formatDisplay(returnD)}`);
+      onConfirm(formatForLLM(returnD));
     }
     setOpen(false);
   };
@@ -276,7 +270,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.border,
-    padding: 14,
+    padding: 10,
+    maxWidth: 338,
+    alignSelf: "flex-start",
   },
   phaseRow: {
     flexDirection: "row",
@@ -330,20 +326,21 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   dayLabel: {
-    width: `${100 / 7}%`,
+    width: 45,
     textAlign: "center",
     fontFamily: Typography.sansSemiBold,
     fontSize: 11,
     color: Colors.textMuted,
-    paddingVertical: 4,
+    paddingVertical: 3,
   },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
+    width: 315,
   },
   cell: {
-    width: `${100 / 7}%`,
-    aspectRatio: 1,
+    width: 45,
+    height: 45,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -1,10 +1,28 @@
 import React from 'react';
+import { View } from 'react-native';
 import { Tabs, Redirect } from 'expo-router';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAuth } from '../../src/context/AuthContext';
-import { Colors, Radius, Typography } from '../../src/theme/colors';
+import { Colors, Radius } from '../../src/theme/colors';
+
+type TabIconProps = { color: string; focused: boolean; iconName: Parameters<typeof IconSymbol>[0]['name']; label: string };
+
+function TabPill({ color, focused, iconName }: TabIconProps) {
+  return (
+    <View style={{
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+    }}>
+      <IconSymbol size={24} name={iconName} color={color} />
+      {focused && (
+        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.primary }} />
+      )}
+    </View>
+  );
+}
 
 export default function TabLayout() {
   const { user, authLoading } = useAuth();
@@ -17,20 +35,15 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarButton: HapticTab,
-        sceneStyle: {
-          backgroundColor: Colors.background,
-        },
+        sceneStyle: { backgroundColor: "transparent" },
         tabBarHideOnKeyboard: true,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarShowLabel: false,
         tabBarStyle: {
           position: 'absolute',
           left: 16,
           right: 16,
           bottom: 18,
-          height: 78,
-          paddingTop: 10,
-          paddingBottom: 12,
+          height: 72,
           backgroundColor: Colors.surfaceRaised,
           borderTopWidth: 0,
           borderRadius: Radius.xl,
@@ -40,34 +53,36 @@ export default function TabLayout() {
           shadowOffset: { width: 0, height: 10 },
           elevation: 12,
         },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontFamily: Typography.sansBold,
-          letterSpacing: 0.2,
-        },
         tabBarItemStyle: {
-          borderRadius: Radius.lg,
+          alignItems: 'center',
+          justifyContent: 'center',
         },
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Assistant',
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="house.fill" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabPill color={color} focused={focused} iconName="house.fill" label="Assistant" />
+          ),
         }}
       />
       <Tabs.Screen
         name="explore"
         options={{
           title: 'Trips',
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="bookmark.fill" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabPill color={color} focused={focused} iconName="bookmark.fill" label="Trips" />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="person.fill" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabPill color={color} focused={focused} iconName="person.fill" label="Profile" />
+          ),
         }}
       />
     </Tabs>

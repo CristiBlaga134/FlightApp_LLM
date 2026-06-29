@@ -1,7 +1,8 @@
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import {
@@ -80,17 +81,29 @@ function formatBookingStatus(status: SavedBooking['status']) {
   return status === 'processing' ? 'Pending' : 'Confirmed';
 }
 
+function normalizeSupplierLabel(label: string): string {
+  return label
+    .replace(/\s+\./g, '.')       // "Air .Inclus" → "Air.Inclus"
+    .replace(/\.(?!\s)/g, '. ')   // "Air.Inclus"  → "Air. Inclus"
+    .replace(/:(?!\s)/g, ': ');   // "preţ:Geantă" → "preţ: Geantă"
+}
+
 function AnimatedCard({ delay = 0, children, style }: { delay?: number; children: React.ReactNode; style?: any }) {
   const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.spring(anim, {
-      toValue: 1,
-      useNativeDriver: true,
-      friction: 7,
-      tension: 50,
-      delay,
-    }).start();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      anim.setValue(0);
+      const spring = Animated.spring(anim, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 7,
+        tension: 50,
+        delay,
+      });
+      spring.start();
+      return () => spring.stop();
+    }, [delay])
+  );
   return (
     <Animated.View
       style={[
@@ -132,16 +145,18 @@ function IdeaCard({ idea, onPress }: { idea: typeof quickIdeas[0]; onPress: () =
     Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 6 }).start();
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
-      <Pressable style={styles.ideaCard} onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
-        <View style={styles.ideaIconWrap}>
-          <MaterialCommunityIcons name={idea.icon as any} size={20} color={Colors.accent} />
-        </View>
-        <View style={styles.ideaBody}>
-          <Text style={styles.ideaTitle}>{idea.title}</Text>
-          <Text style={styles.ideaNote}>{idea.note}</Text>
-          <Text style={styles.ideaPrompt}>{idea.prompt}</Text>
-        </View>
-        <Feather name="arrow-up-right" size={18} color={Colors.textSecondary} />
+      <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
+        <LinearGradient colors={['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.ideaCard}>
+          <View style={styles.ideaIconWrap}>
+            <MaterialCommunityIcons name={idea.icon as any} size={20} color={Colors.accent} />
+          </View>
+          <View style={styles.ideaBody}>
+            <Text style={styles.ideaTitle}>{idea.title}</Text>
+            <Text style={styles.ideaNote}>{idea.note}</Text>
+            <Text style={styles.ideaPrompt}>{idea.prompt}</Text>
+          </View>
+          <Feather name="arrow-up-right" size={18} color={Colors.textSecondary} />
+        </LinearGradient>
       </Pressable>
     </Animated.View>
   );
@@ -150,6 +165,17 @@ function IdeaCard({ idea, onPress }: { idea: typeof quickIdeas[0]; onPress: () =
 export default function TripsScreen() {
   const { profile, savedSearches, bookings, setPendingChatPrefill } = useUserProfile();
   const router = useRouter();
+  const { scrollTo } = useLocalSearchParams<{ scrollTo?: string }>();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const sectionY = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!scrollTo) return;
+    const y = sectionY.current[scrollTo];
+    if (y != null) {
+      setTimeout(() => scrollViewRef.current?.scrollTo({ y, animated: true }), 350);
+    }
+  }, [scrollTo]);
 
   const launchPrompt = (prompt: string) => {
     setPendingChatPrefill(prompt);
@@ -157,8 +183,15 @@ export default function TripsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+    <LinearGradient
+      colors={["#0D4F82", "#1A72B0", "#5BAAD4", "#BDD9EE", "#E5EDF4"]}
+      locations={[0, 0.22, 0.48, 0.70, 1]}
+      style={styles.gradient}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+    >
+      <SafeAreaView style={styles.safeArea}>
+      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <AnimatedCard delay={0}>
           <View style={styles.heroCard}>
             <View style={styles.heroOrbWarm} />
@@ -184,7 +217,7 @@ export default function TripsScreen() {
         </AnimatedCard>
 
         <AnimatedCard delay={80}>
-          <View style={styles.sectionHeader}>
+          <View style={styles.sectionHeader} onLayout={(e) => { sectionY.current['bookings'] = e.nativeEvent.layout.y; }}>
             <Text style={styles.sectionEyebrow}>Booked trips</Text>
             <Text style={styles.sectionTitle}>Recent checkout activity</Text>
           </View>
@@ -193,16 +226,16 @@ export default function TripsScreen() {
         <AnimatedCard delay={130}>
           <View style={styles.routeStack}>
             {bookings.length === 0 ? (
-              <View style={styles.emptyCard}>
+              <LinearGradient colors={['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.emptyCard}>
                 <MaterialCommunityIcons name="credit-card-check-outline" size={24} color={Colors.accent} />
                 <Text style={styles.emptyTitle}>No bookings yet</Text>
                 <Text style={styles.emptyText}>
                   Complete a checkout from the assistant and the confirmation will appear here as part of your demo trail.
                 </Text>
-              </View>
+              </LinearGradient>
             ) : (
               bookings.map((booking, index) => (
-                <View key={booking.id ?? `${booking.bookingReference}-${index}`} style={styles.routeCard}>
+                <LinearGradient key={booking.id ?? `${booking.bookingReference}-${index}`} colors={['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.routeCard}>
                   <View style={styles.routeTopRow}>
                     <View>
                       <View style={styles.routeTitleRow}>
@@ -222,7 +255,7 @@ export default function TripsScreen() {
                   </View>
 
                   <View style={styles.routeMetaRow}>
-                    <Text style={styles.routeMetaChip}>{booking.supplier} • {booking.airline || 'Live supplier fare'}</Text>
+                    <Text style={styles.routeMetaChip}>{booking.supplier} • {normalizeSupplierLabel(booking.airline || 'Live supplier fare')}</Text>
                     <Text style={styles.routeMetaChip}>{booking.amount} {booking.currency}</Text>
                     <Text style={styles.routeMetaChip}>Ref {booking.bookingReference}</Text>
                   </View>
@@ -232,7 +265,7 @@ export default function TripsScreen() {
                       ? `Payment cleared. Supplier confirmation expected by ${booking.estimatedConfirmationAt || 'shortly'}.`
                       : `Charged on ${booking.cardBrand.toUpperCase()} ending in ${booking.cardLast4} for ${booking.travelerName}.`}
                   </Text>
-                </View>
+                </LinearGradient>
               ))
             )}
           </View>
@@ -254,7 +287,7 @@ export default function TripsScreen() {
         </View>
 
         <AnimatedCard delay={480}>
-          <View style={styles.sectionHeader}>
+          <View style={styles.sectionHeader} onLayout={(e) => { sectionY.current['searches'] = e.nativeEvent.layout.y; }}>
             <Text style={styles.sectionEyebrow}>Recent searches</Text>
             <Text style={styles.sectionTitle}>Return to a route</Text>
           </View>
@@ -263,16 +296,16 @@ export default function TripsScreen() {
         <AnimatedCard delay={530}>
           <View style={styles.routeStack}>
             {savedSearches.length === 0 ? (
-              <View style={styles.emptyCard}>
+              <LinearGradient colors={['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.emptyCard}>
                 <MaterialCommunityIcons name="map-search-outline" size={24} color={Colors.accent} />
                 <Text style={styles.emptyTitle}>No saved routes yet</Text>
                 <Text style={styles.emptyText}>
                   Once you search through the assistant, the strongest route context will start appearing here.
                 </Text>
-              </View>
+              </LinearGradient>
             ) : (
               savedSearches.map((search, index) => (
-                <View key={search.id ?? `${search.originCity}-${search.destinationCity}-${index}`} style={styles.routeCard}>
+                <LinearGradient key={search.id ?? `${search.originCity}-${search.destinationCity}-${index}`} colors={['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.routeCard}>
                   <View style={styles.routeTopRow}>
                     <View>
                       <View style={styles.routeTitleRow}>
@@ -296,21 +329,23 @@ export default function TripsScreen() {
                     <Text style={styles.routeActionText}>Search again</Text>
                     <Feather name="arrow-right" size={15} color={Colors.textOnDark} />
                   </Pressable>
-                </View>
+                </LinearGradient>
               ))
             )}
           </View>
         </AnimatedCard>
 
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
+  gradient: { flex: 1 },
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',
   },
   container: {
     padding: Spacing.lg,
@@ -410,7 +445,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   sectionEyebrow: {
-    color: Colors.accent,
+    color: 'rgba(255,255,255,0.75)',
     fontFamily: Typography.sansBold,
     fontSize: 11,
     textTransform: 'uppercase',
@@ -418,7 +453,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sectionTitle: {
-    color: Colors.textPrimary,
+    color: '#FFFFFF',
     fontFamily: Typography.display,
     fontSize: 28,
     lineHeight: 28,
@@ -430,7 +465,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 14,
-    backgroundColor: Colors.surfaceRaised,
     borderRadius: Radius.xl,
     padding: 16,
     borderWidth: 1,
@@ -471,7 +505,6 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     alignItems: 'center',
-    backgroundColor: Colors.surfaceRaised,
     borderRadius: Radius.xl,
     padding: 22,
     borderWidth: 1,
@@ -491,7 +524,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   routeCard: {
-    backgroundColor: Colors.surfaceRaised,
     borderRadius: Radius.xl,
     padding: 16,
     borderWidth: 1,
@@ -551,7 +583,7 @@ const styles = StyleSheet.create({
   },
   routeMetaChip: {
     color: Colors.textPrimary,
-    backgroundColor: Colors.surfaceSoft,
+    backgroundColor: '#E8F7FF',
     borderRadius: Radius.pill,
     paddingHorizontal: 10,
     paddingVertical: 7,

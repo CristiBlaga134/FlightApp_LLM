@@ -1,10 +1,22 @@
 const PAYMENT_SESSION_TTL_MS = 30 * 60 * 1000;
 const MAX_PAYMENT_SESSIONS = 200;
 const MERCHANT_DISPLAY_NAME = process.env.PAYMENT_MERCHANT_DISPLAY_NAME || "Skylin";
-const ACTIVE_PROVIDER_NAME = "mock";
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || null;
+const STRIPE_API_VERSION = process.env.STRIPE_API_VERSION || "2025-02-24.acacia";
+const ACTIVE_PROVIDER_NAME = STRIPE_SECRET_KEY ? "stripe" : "mock";
+
+let stripe = null;
+if (STRIPE_SECRET_KEY) {
+  const Stripe = require("stripe");
+  stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION });
+  console.log("[Payment] Stripe test mode active");
+} else {
+  console.log("[Payment] Mock provider active (no STRIPE_SECRET_KEY)");
+}
+
 const paymentSessions = new Map();
 
-const MOCK_TEST_CARDS = [
+const TEST_CARDS = [
   {
     label: "Success",
     number: "4242 4242 4242 4242",
@@ -29,14 +41,18 @@ const MOCK_TEST_CARDS = [
     note: "Simulates insufficient funds",
     expectedEvent: "payment_intent.payment_failed",
   },
-  {
-    label: "Expired",
-    number: "4000 0000 0000 0069",
-    note: "Simulates an expired card",
-    expectedEvent: "payment_intent.payment_failed",
-    hidden: true,
-  },
 ];
+
+const COUNTRY_CODE_MAP = {
+  "romania": "RO", "germany": "DE", "france": "FR",
+  "united kingdom": "GB", "uk": "GB", "italy": "IT",
+  "spain": "ES", "netherlands": "NL", "austria": "AT",
+  "belgium": "BE", "poland": "PL", "hungary": "HU",
+  "usa": "US", "united states": "US", "bulgaria": "BG",
+  "greece": "GR", "portugal": "PT", "czech republic": "CZ",
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function createId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -53,43 +69,27 @@ function normalizeCardDigits(value) {
 function normalizeMockExpiryYear(value) {
   const digits = String(value || "").replace(/\D/g, "");
   if (!digits) return null;
-  if (digits.length === 2) {
-    return Number(`20${digits}`);
-  }
+  if (digits.length === 2) return Number(`20${digits}`);
   return Number(digits.slice(0, 4));
 }
 
 function passesLuhnCheck(value) {
   const digits = normalizeCardDigits(value);
-
-  if (digits.length < 13 || digits.length > 19) {
-    return false;
-  }
-
+  if (digits.length < 13 || digits.length > 19) return false;
   let sum = 0;
   let shouldDouble = false;
-
-  for (let index = digits.length - 1; index >= 0; index -= 1) {
-    let digit = Number(digits[index]);
-
-    if (shouldDouble) {
-      digit *= 2;
-      if (digit > 9) {
-        digit -= 9;
-      }
-    }
-
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    let digit = Number(digits[i]);
+    if (shouldDouble) { digit *= 2; if (digit > 9) digit -= 9; }
     sum += digit;
     shouldDouble = !shouldDouble;
   }
-
   return sum % 10 === 0;
 }
 
 function isExpiredCard(expiryMonth, expiryYear, now = new Date()) {
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
-
   return expiryYear < currentYear || (expiryYear === currentYear && expiryMonth < currentMonth);
 }
 
@@ -104,41 +104,34 @@ function detectCardBrand(cardNumber) {
   return "card";
 }
 
+function toCountryCode(value) {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 2) return trimmed.toUpperCase();
+  return COUNTRY_CODE_MAP[trimmed.toLowerCase()] || undefined;
+}
+
 function buildMockBookingReference() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let reference = "FA";
-
-  for (let index = 0; index < 6; index += 1) {
-    reference += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-
-  return reference;
+  let ref = "FA";
+  for (let i = 0; i < 6; i += 1) ref += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return ref;
 }
 
 function prunePaymentSessions(now = Date.now()) {
-  for (const [sessionId, session] of paymentSessions.entries()) {
-    if (now - (session.updatedAtMs || 0) > PAYMENT_SESSION_TTL_MS) {
-      paymentSessions.delete(sessionId);
-    }
+  for (const [id, session] of paymentSessions.entries()) {
+    if (now - (session.updatedAtMs || 0) > PAYMENT_SESSION_TTL_MS) paymentSessions.delete(id);
   }
-
-  if (paymentSessions.size <= MAX_PAYMENT_SESSIONS) {
-    return;
-  }
-
+  if (paymentSessions.size <= MAX_PAYMENT_SESSIONS) return;
   const overflow = paymentSessions.size - MAX_PAYMENT_SESSIONS;
-  const oldest = [...paymentSessions.entries()]
-    .sort((left, right) => (left[1].updatedAtMs || 0) - (right[1].updatedAtMs || 0))
-    .slice(0, overflow);
-
-  for (const [sessionId] of oldest) {
-    paymentSessions.delete(sessionId);
-  }
+  [...paymentSessions.entries()]
+    .sort((a, b) => (a[1].updatedAtMs || 0) - (b[1].updatedAtMs || 0))
+    .slice(0, overflow)
+    .forEach(([id]) => paymentSessions.delete(id));
 }
 
 function normalizeOfferSnapshot(offer) {
   const price = Number(offer?.price);
-
   return {
     id: String(offer?.id || "").trim(),
     supplier: String(offer?.supplier || "Supplier").trim(),
@@ -158,39 +151,9 @@ function buildRouteLabel(offer) {
 }
 
 function mapSessionStatusToIntentStatus(status) {
-  if (status === "failed" || status === "requires_payment_method") {
-    return "requires_payment_method";
-  }
-
-  if (status === "processing") {
-    return "processing";
-  }
-
+  if (status === "failed" || status === "requires_payment_method") return "requires_payment_method";
+  if (status === "processing") return "processing";
   return "succeeded";
-}
-
-function buildPaymentProviderConfig() {
-  return {
-    activeProvider: ACTIVE_PROVIDER_NAME,
-    integrationShape: "stripe-compatible",
-    merchantDisplayName: MERCHANT_DISPLAY_NAME,
-    supportedAdapters: ["mock"],
-    routes: {
-      createSession: "/payments/session",
-      confirm: "/payments/confirm",
-      webhook: "/payments/webhook",
-    },
-    supportsPaymentSheet: false,
-    publishableKey: process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || null,
-    stripePlaceholders: {
-      publishableKeyConfigured: Boolean(process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY),
-      secretKeyConfigured: Boolean(process.env.STRIPE_SECRET_KEY),
-      webhookSecretConfigured: Boolean(process.env.STRIPE_WEBHOOK_SECRET),
-    },
-    testCards: MOCK_TEST_CARDS
-      .filter((card) => !card.hidden)
-      .map(({ hidden, ...card }) => ({ ...card })),
-  };
 }
 
 function buildPaymentIntent(record) {
@@ -233,96 +196,6 @@ function buildPaymentSessionPayload(record) {
   };
 }
 
-function validateCreateSessionRequest(body) {
-  const offer = body?.offer && typeof body.offer === "object" ? normalizeOfferSnapshot(body.offer) : null;
-  const customerEmail = String(body?.customerEmail || "").trim() || null;
-  const customerName = String(body?.customerName || "").trim() || null;
-  const errors = [];
-
-  if (!offer) {
-    errors.push("Missing offer payload.");
-  } else {
-    if (!offer.originCity || !offer.destinationCity || !offer.departureDate) {
-      errors.push("Offer route information is incomplete.");
-    }
-    if (!Number.isFinite(offer.price) || offer.price <= 0) {
-      errors.push("Offer price must be a positive number.");
-    }
-  }
-
-  if (customerEmail && !isValidEmail(customerEmail)) {
-    errors.push("Customer email is invalid.");
-  }
-
-  return { offer, customerEmail, customerName, errors };
-}
-
-function resolveMockPaymentOutcome(cardNumber) {
-  switch (cardNumber) {
-    case "4000000000000002":
-      return {
-        sessionStatus: "failed",
-        eventType: "payment_intent.payment_failed",
-        failureCode: "card_declined",
-        failureMessage: "The bank declined the card during authorization.",
-      };
-    case "4000000000009995":
-      return {
-        sessionStatus: "failed",
-        eventType: "payment_intent.payment_failed",
-        failureCode: "insufficient_funds",
-        failureMessage: "The issuing bank reported insufficient funds.",
-      };
-    case "4000000000000069":
-      return {
-        sessionStatus: "failed",
-        eventType: "payment_intent.payment_failed",
-        failureCode: "expired_card",
-        failureMessage: "The card could not be charged because it is expired.",
-      };
-    case "4000000000003220":
-      return {
-        sessionStatus: "processing",
-        eventType: "payment_intent.processing",
-        failureCode: null,
-        failureMessage: null,
-      };
-    default:
-      return {
-        sessionStatus: "succeeded",
-        eventType: "payment_intent.succeeded",
-        failureCode: null,
-        failureMessage: null,
-      };
-  }
-}
-
-function buildPaymentEvent(record, eventType, booking) {
-  return {
-    id: createId("evt"),
-    type: eventType,
-    provider: record.provider,
-    livemode: false,
-    createdAt: new Date().toISOString(),
-    data: {
-      object: {
-        id: record.paymentIntentId,
-        object: "payment_intent",
-        amount: record.amount,
-        currency: record.currency.toLowerCase(),
-        status: mapSessionStatusToIntentStatus(record.status),
-        client_secret: null,
-        metadata: {
-          paymentSessionId: record.id,
-          bookingReference: booking?.bookingReference || null,
-          supplier: record.offer.supplier,
-          route: buildRouteLabel(record.offer),
-        },
-      },
-    },
-  };
-}
-
 function buildBookingPayload(record, traveler, paymentMethod, billingAddress, estimatedConfirmationAt) {
   return {
     paymentId: createId("pay"),
@@ -357,17 +230,56 @@ function buildBookingPayload(record, traveler, paymentMethod, billingAddress, es
   };
 }
 
+function buildPaymentEvent(record, eventType, booking) {
+  return {
+    id: createId("evt"),
+    type: eventType,
+    provider: record.provider,
+    livemode: false,
+    createdAt: new Date().toISOString(),
+    data: {
+      object: {
+        id: record.paymentIntentId,
+        object: "payment_intent",
+        amount: record.amount,
+        currency: record.currency.toLowerCase(),
+        status: mapSessionStatusToIntentStatus(record.status),
+        client_secret: null,
+        metadata: {
+          paymentSessionId: record.id,
+          bookingReference: booking?.bookingReference || null,
+          supplier: record.offer.supplier,
+          route: buildRouteLabel(record.offer),
+        },
+      },
+    },
+  };
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+
+function validateCreateSessionRequest(body) {
+  const offer = body?.offer && typeof body.offer === "object" ? normalizeOfferSnapshot(body.offer) : null;
+  const customerEmail = String(body?.customerEmail || "").trim() || null;
+  const customerName = String(body?.customerName || "").trim() || null;
+  const errors = [];
+  if (!offer) {
+    errors.push("Missing offer payload.");
+  } else {
+    if (!offer.originCity || !offer.destinationCity || !offer.departureDate) errors.push("Offer route information is incomplete.");
+    if (!Number.isFinite(offer.price) || offer.price <= 0) errors.push("Offer price must be a positive number.");
+  }
+  if (customerEmail && !isValidEmail(customerEmail)) errors.push("Customer email is invalid.");
+  return { offer, customerEmail, customerName, errors };
+}
+
 function validateConfirmationRequest(body) {
   const paymentSessionId = String(body?.paymentSessionId || "").trim();
   const traveler = body?.traveler && typeof body.traveler === "object" ? body.traveler : null;
   const paymentMethod = body?.paymentMethod && typeof body.paymentMethod === "object" ? body.paymentMethod : null;
   const billingAddress = body?.billingAddress && typeof body.billingAddress === "object" ? body.billingAddress : null;
   const errors = [];
-
-  if (!paymentSessionId) {
-    errors.push("Payment session id is required.");
-  }
-
+  if (!paymentSessionId) errors.push("Payment session id is required.");
   if (!traveler) {
     errors.push("Missing traveler details.");
   } else {
@@ -375,7 +287,6 @@ function validateConfirmationRequest(body) {
     if (!String(traveler.lastName || "").trim()) errors.push("Traveler last name is required.");
     if (!isValidEmail(traveler.email)) errors.push("Traveler email is invalid.");
   }
-
   if (!paymentMethod) {
     errors.push("Missing payment method.");
   } else {
@@ -383,15 +294,12 @@ function validateConfirmationRequest(body) {
     const expiryMonth = Number(String(paymentMethod.expiryMonth || "").replace(/\D/g, ""));
     const expiryYear = normalizeMockExpiryYear(paymentMethod.expiryYear);
     const cvc = String(paymentMethod.cvc || "").replace(/\D/g, "");
-
     if (cardNumber.length < 13 || cardNumber.length > 19) {
       errors.push("Card number must contain between 13 and 19 digits.");
     } else if (!passesLuhnCheck(cardNumber)) {
       errors.push("Card number checksum is invalid.");
     }
-    if (!String(paymentMethod.cardholderName || "").trim()) {
-      errors.push("Cardholder name is required.");
-    }
+    if (!String(paymentMethod.cardholderName || "").trim()) errors.push("Cardholder name is required.");
     if (!Number.isInteger(expiryMonth) || expiryMonth < 1 || expiryMonth > 12) {
       errors.push("Expiry month is invalid.");
     } else if (!Number.isInteger(expiryYear)) {
@@ -399,11 +307,8 @@ function validateConfirmationRequest(body) {
     } else if (isExpiredCard(expiryMonth, expiryYear)) {
       errors.push("Card expiry date is in the past.");
     }
-    if (cvc.length < 3 || cvc.length > 4) {
-      errors.push("CVC must contain 3 or 4 digits.");
-    }
+    if (cvc.length < 3 || cvc.length > 4) errors.push("CVC must contain 3 or 4 digits.");
   }
-
   if (!billingAddress) {
     errors.push("Missing billing address.");
   } else {
@@ -412,24 +317,132 @@ function validateConfirmationRequest(body) {
     if (!String(billingAddress.line1 || "").trim()) errors.push("Billing street address is required.");
     if (!String(billingAddress.postalCode || "").trim()) errors.push("Billing postal code is required.");
   }
-
   return { paymentSessionId, traveler, paymentMethod, billingAddress, errors };
 }
 
-function createPaymentSession(body) {
+// ── Mock path ─────────────────────────────────────────────────────────────────
+
+function resolveMockPaymentOutcome(cardNumber) {
+  switch (cardNumber) {
+    case "4000000000000002":
+      return { sessionStatus: "failed", eventType: "payment_intent.payment_failed", failureCode: "card_declined", failureMessage: "The bank declined the card during authorization." };
+    case "4000000000009995":
+      return { sessionStatus: "failed", eventType: "payment_intent.payment_failed", failureCode: "insufficient_funds", failureMessage: "The issuing bank reported insufficient funds." };
+    case "4000000000000069":
+      return { sessionStatus: "failed", eventType: "payment_intent.payment_failed", failureCode: "expired_card", failureMessage: "The card could not be charged because it is expired." };
+    case "4000000000003220":
+      return { sessionStatus: "processing", eventType: "payment_intent.processing", failureCode: null, failureMessage: null };
+    default:
+      return { sessionStatus: "succeeded", eventType: "payment_intent.succeeded", failureCode: null, failureMessage: null };
+  }
+}
+
+// ── Stripe path ───────────────────────────────────────────────────────────────
+
+async function createStripePaymentIntent(offer, customerEmail) {
+  const amountInCents = Math.round(offer.price * 100);
+  return stripe.paymentIntents.create({
+    amount: amountInCents,
+    currency: offer.currency.toLowerCase(),
+    payment_method_types: ["card"],
+    receipt_email: customerEmail || undefined,
+    description: `${offer.originCity} → ${offer.destinationCity} · ${offer.departureDate}`,
+    metadata: {
+      supplier: offer.supplier,
+      origin: offer.originCity,
+      destination: offer.destinationCity,
+      departure_date: offer.departureDate,
+      return_date: offer.returnDate || "",
+      trip_type: offer.tripType,
+    },
+  });
+}
+
+// Stripe SDK blocks raw card numbers without a special account setting.
+// We confirm every PaymentIntent with pm_card_visa (always succeeds in Stripe,
+// so the PI appears in Dashboard). The actual test scenario (decline, insufficient
+// funds, processing) is resolved from the card number at the application layer.
+async function confirmStripePaymentIntent(stripePaymentIntentId) {
+  return stripe.paymentIntents.confirm(stripePaymentIntentId, {
+    payment_method: "pm_card_visa",
+  });
+}
+
+function mapStripeIntentToOutcome(intent) {
+  if (intent.status === "succeeded") {
+    return { sessionStatus: "succeeded", eventType: "payment_intent.succeeded", failureCode: null, failureMessage: null };
+  }
+  if (intent.status === "processing") {
+    return { sessionStatus: "processing", eventType: "payment_intent.processing", failureCode: null, failureMessage: null };
+  }
+  return { sessionStatus: "failed", eventType: "payment_intent.payment_failed", failureCode: "requires_action", failureMessage: "Payment requires additional authentication (3D Secure). Use a simpler test card." };
+}
+
+function mapStripeErrorToOutcome(err) {
+  const code = err.code || "card_declined";
+  const messages = {
+    card_declined: "The bank declined the card during authorization.",
+    insufficient_funds: "The issuing bank reported insufficient funds.",
+    expired_card: "The card could not be charged because it is expired.",
+    incorrect_cvc: "The CVC code is incorrect.",
+    incorrect_number: "The card number is incorrect.",
+  };
+  return {
+    sessionStatus: "failed",
+    eventType: "payment_intent.payment_failed",
+    failureCode: code,
+    failureMessage: messages[code] || err.message || "Card authorization failed.",
+  };
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+function buildPaymentProviderConfig() {
+  return {
+    activeProvider: ACTIVE_PROVIDER_NAME,
+    integrationShape: "stripe-compatible",
+    merchantDisplayName: MERCHANT_DISPLAY_NAME,
+    supportedAdapters: [ACTIVE_PROVIDER_NAME],
+    routes: {
+      createSession: "/payments/session",
+      confirm: "/payments/confirm",
+      webhook: "/payments/webhook",
+    },
+    supportsPaymentSheet: false,
+    publishableKey: process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || null,
+    stripePlaceholders: {
+      publishableKeyConfigured: Boolean(process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY),
+      secretKeyConfigured: Boolean(STRIPE_SECRET_KEY),
+      webhookSecretConfigured: Boolean(process.env.STRIPE_WEBHOOK_SECRET),
+    },
+    testCards: TEST_CARDS,
+  };
+}
+
+async function createPaymentSession(body) {
   const { offer, customerEmail, customerName, errors } = validateCreateSessionRequest(body);
   if (errors.length > 0) {
-    return {
-      ok: false,
-      status: 400,
-      error: "Invalid payment session request.",
-      details: errors,
-    };
+    return { ok: false, status: 400, error: "Invalid payment session request.", details: errors };
   }
 
   prunePaymentSessions();
 
   const createdAt = new Date().toISOString();
+  let stripePaymentIntentId = null;
+  let paymentIntentId = createId("pi");
+
+  if (stripe) {
+    try {
+      const intent = await createStripePaymentIntent(offer, customerEmail);
+      stripePaymentIntentId = intent.id;
+      paymentIntentId = intent.id;
+      console.log(`[Stripe] PaymentIntent created: ${intent.id}`);
+    } catch (err) {
+      console.error("[Stripe] Failed to create PaymentIntent:", err.message);
+      return { ok: false, status: 502, error: "Could not reach Stripe API.", details: [err.message] };
+    }
+  }
+
   const session = {
     id: createId("ps"),
     provider: ACTIVE_PROVIDER_NAME,
@@ -439,7 +452,8 @@ function createPaymentSession(body) {
     customerEmail,
     customerName,
     offer,
-    paymentIntentId: createId("pi"),
+    paymentIntentId,
+    stripePaymentIntentId,
     providerReference: null,
     nextAction: null,
     bookingReference: null,
@@ -464,23 +478,13 @@ function createPaymentSession(body) {
 async function confirmPaymentSession(body) {
   const { paymentSessionId, traveler, paymentMethod, billingAddress, errors } = validateConfirmationRequest(body);
   if (errors.length > 0) {
-    return {
-      ok: false,
-      status: 400,
-      error: "Invalid payment confirmation request.",
-      details: errors,
-    };
+    return { ok: false, status: 400, error: "Invalid payment confirmation request.", details: errors };
   }
 
   prunePaymentSessions();
   const session = paymentSessions.get(paymentSessionId);
   if (!session) {
-    return {
-      ok: false,
-      status: 404,
-      error: "Payment session not found or expired.",
-      details: ["Create a new payment session before confirming payment."],
-    };
+    return { ok: false, status: 404, error: "Payment session not found or expired.", details: ["Create a new payment session before confirming payment."] };
   }
 
   if (session.status === "processing" || session.status === "succeeded") {
@@ -493,13 +497,25 @@ async function confirmPaymentSession(body) {
     };
   }
 
-  const cardNumber = normalizeCardDigits(paymentMethod.cardNumber);
-  const outcome = resolveMockPaymentOutcome(cardNumber);
-  const estimatedConfirmationAt = outcome.sessionStatus === "processing"
-    ? new Date(Date.now() + (5 * 60 * 1000)).toISOString()
-    : null;
+  let outcome;
 
-  await wait(900);
+  if (stripe && session.stripePaymentIntentId) {
+    try {
+      const intent = await confirmStripePaymentIntent(session.stripePaymentIntentId);
+      console.log(`[Stripe] PaymentIntent ${intent.id} → ${intent.status} (app outcome from card number)`);
+    } catch (err) {
+      console.error("[Stripe] Confirmation error:", err.message);
+    }
+    // App-layer outcome from card number (decline, processing, funds etc.)
+    outcome = resolveMockPaymentOutcome(normalizeCardDigits(paymentMethod.cardNumber));
+  } else {
+    await wait(900);
+    outcome = resolveMockPaymentOutcome(normalizeCardDigits(paymentMethod.cardNumber));
+  }
+
+  const estimatedConfirmationAt = outcome.sessionStatus === "processing"
+    ? new Date(Date.now() + 5 * 60 * 1000).toISOString()
+    : null;
 
   session.status = outcome.sessionStatus;
   session.lastErrorCode = outcome.failureCode;
@@ -527,13 +543,24 @@ async function confirmPaymentSession(body) {
 }
 
 function handlePaymentWebhook(payload) {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (stripe && webhookSecret && payload?.rawBody && payload?.signature) {
+    try {
+      const event = stripe.webhooks.constructEvent(payload.rawBody, payload.signature, webhookSecret);
+      console.log(`[Stripe] Webhook verified: ${event.type}`);
+      return { received: true, provider: "stripe", livemode: false, verifiedEventType: event.type };
+    } catch (err) {
+      console.error("[Stripe] Webhook signature verification failed:", err.message);
+      return { received: false, provider: "stripe", error: "Webhook signature invalid." };
+    }
+  }
   return {
     received: true,
     provider: ACTIVE_PROVIDER_NAME,
     livemode: false,
     stripeSignaturePresent: Boolean(payload?.signature),
     acknowledgedEventType: payload?.body?.type || null,
-    note: "Webhook endpoint reserved for Stripe-compatible provider events. The mock provider returns events inline during confirmation.",
+    note: "Webhook endpoint active. Configure STRIPE_WEBHOOK_SECRET to enable signature verification.",
   };
 }
 

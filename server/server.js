@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const axios = require("axios");
@@ -515,8 +516,15 @@ Merging rules:
 - If user gives partial info (e.g. only a city), infer the correct field based on context
 
 Extraction rules:
-- If a value is missing, use null (except passengers).
-- passengers: if missing, set to 1.
+- If a value is missing, use null (except adults and passengers).
+- adults: number of adult passengers. If not specified, default to 1.
+- children: number of child passengers (under 18). If not specified, default to 0.
+- passengers: total passengers = adults + children. Always keep in sync.
+- "2 adults" / "2 adulți" -> adults = 2
+- "1 child" / "1 copil" / "un copil" -> children = 1
+- "2 children" / "2 copii" -> children = 2
+- "family of 4" -> adults = 2, children = 2
+- "me and my partner" / "2 people" / "2 persoane" -> adults = 2
 - If the user names a specific airport, also fill the matching airport code.
 - If the user only says a city with multiple airports, keep airportCode = null so the app can ask a follow-up.
 - Dates must be ISO format YYYY-MM-DD.
@@ -525,7 +533,9 @@ Extraction rules:
 - Never return literal strings like "tomorrow" inside departureDate/returnDate.
 - Example: "today" -> "${today}", "tomorrow" / "maine" -> "${tomorrow}"
 - tripType must be "one_way" or "round_trip".
-- cabinClass must be one of: "economy","premium_economy","business","first".
+- cabinClass must be one of: "economy","premium_economy","business","first", or null.
+- If the user does NOT explicitly mention a cabin class, set cabinClass to null. Do NOT default to any class.
+- Only set cabinClass when the user says words like "economy", "business class", "first class", "premium economy", "clasa business", "clasa intai", "clasa economica", etc.
 - baggage: cabinBags and checkedBags are integers.
 
 Vibe/climate keywords:
@@ -578,7 +588,9 @@ JSON schema:
   "cabinClass": "economy"|"premium_economy"|"business"|"first"|null,
   "cabinBags": number|null,
   "checkedBags": number|null,
-  "passengers": number|null,
+  "adults": number,
+  "children": number,
+  "passengers": number,
   "maxStops": number|null,
   "needsAccessibleSeating": boolean|null,
   "vibe": "sunny"|"snowy"|"temperate"|"cultural"|"romantic"|"vibrant"|"artistic"|"laid-back"|"luxury"|"modern"|null
@@ -659,7 +671,9 @@ JSON schema:
   "cabinClass": "economy"|"premium_economy"|"business"|"first"|null,
   "cabinBags": number|null,
   "checkedBags": number|null,
-  "passengers": number|null,
+  "adults": number,
+  "children": number,
+  "passengers": number,
   "maxStops": number|null,
   "needsAccessibleSeating": boolean|null,
   "vibe": "sunny"|"snowy"|"temperate"|"cultural"|"romantic"|"vibrant"|"artistic"|"laid-back"|"luxury"|"modern"|null
@@ -1384,9 +1398,9 @@ app.get("/payments/config", (_req, res) => {
   });
 });
 
-app.post("/payments/session", (req, res) => {
+app.post("/payments/session", async (req, res) => {
   const requestId = createRequestId();
-  const result = createPaymentSession(req.body);
+  const result = await createPaymentSession(req.body);
 
   if (!result.ok) {
     return res.status(result.status || 400).json({
@@ -1724,6 +1738,29 @@ if (liveOffers.length > 0 && (scraperMeta?.normalizationDiffs || []).length > 0)
     ],
     extracted: sessionState,
     normalization,
+  });
+}
+
+const liveSearchAttempted = Boolean(
+  sessionState.originCity && sessionState.destinationCity && sessionState.departureDate
+);
+
+if (liveSearchAttempted && liveOffers.length === 0 && liveWarnings.length === 0) {
+  clearChatSession(sessionId);
+  console.log("[INTEGRATION] No live flights found, returning no_results");
+  return res.json({
+    requestId,
+    sessionId,
+    extracted: sessionState,
+    mode: "no_results",
+    offers: [],
+    warning: null,
+    noResultsSearch: {
+      originCity: sessionState.originCity || null,
+      destinationCity: sessionState.destinationCity || null,
+      departureDate: sessionState.departureDate || null,
+      returnDate: sessionState.returnDate || null,
+    },
   });
 }
 

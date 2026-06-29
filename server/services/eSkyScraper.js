@@ -1103,14 +1103,42 @@ async function readSearchFormValues(page, originInputHandle, destinationInputHan
 }
 
 async function submitSearch(page, referenceInput = null, options = {}) {
-  // Primary: evaluate-based search across entire document.
-  // Uses ̀-ͯ Unicode escapes (safe for serialization) to strip diacritics
-  // so /caut/ matches "căutare", "cauta", "caută" etc.
   const clicked = await page.evaluate(() => {
-    const isExcluded = (el) => /reset|inchid|schimb|close|anterior|urmator|slide|redare/i.test(el.getAttribute("aria-label") || "");
+    const ariaOf = (el) => (el.getAttribute("aria-label") || "").toLowerCase();
+    const textOf = (el) => (el.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const isExcluded = (el) => {
+      const a = ariaOf(el);
+      const t = textOf(el);
+      if (/reset|inchid|schimb|close|anterior|urmator|slide|redare/i.test(a)) return true;
+      // date navigation buttons: "cu o zi mai târziu / devreme", "day later / earlier"
+      if (/zi mai|o zi|day later|day earlier|next day|prev day/i.test(a)) return true;
+      if (/zi mai târziu|zi mai devreme|zi mai tarziu/i.test(t)) return true;
+      return false;
+    };
 
-    // Primary: find the search button by position — it sits to the right of the date input
-    // in the same horizontal band, with no text/aria-label (eSky uses a bare icon button).
+    // 1. Explicit submit button inside a form
+    const formSubmit = document.querySelector('button[type="submit"]:not([disabled])');
+    if (formSubmit && !isExcluded(formSubmit)) {
+      const r = formSubmit.getBoundingClientRect();
+      if (r.width > 20 && r.height > 20) {
+        formSubmit.click();
+        return { mode: "form-submit", label: textOf(formSubmit).slice(0, 40) || "(submit)" };
+      }
+    }
+
+    // 2. data-track="Search" button (eSky analytics attribute)
+    for (const sel of ['[data-track="Search"]', '[data-track="search"]', '[data-testid*="search"]']) {
+      const el = document.querySelector(sel);
+      if (el && !isExcluded(el)) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 20 && r.height > 20) {
+          el.click();
+          return { mode: "data-track", label: ariaOf(el).slice(0, 40) || sel };
+        }
+      }
+    }
+
+    // 3. Position-based: button to the right of dates_from, excluding date-nav buttons
     const dateInput = document.getElementById("dates_from");
     if (dateInput) {
       const dateRect = dateInput.getBoundingClientRect();
@@ -1129,22 +1157,21 @@ async function submitSearch(page, referenceInput = null, options = {}) {
 
       if (candidates.length > 0) {
         candidates[0].click();
-        const lbl = (candidates[0].getAttribute("aria-label") || candidates[0].textContent || "").trim().slice(0, 40);
+        const lbl = (ariaOf(candidates[0]) || textOf(candidates[0])).slice(0, 40);
         return { mode: "position-based", label: lbl || "(no label)" };
       }
     }
 
-    // Fallback: text button ("Căutare" / "Caută") using explicit diacritic regex
+    // 4. Text button ("Căutare" / "Caută")
     const isSearchText = (s) => /c[aă]ut/i.test(String(s || ""));
-    const allButtons = Array.from(document.querySelectorAll("button, [role='button']")).filter((el) => {
-      const rect = el.getBoundingClientRect();
-      return rect.width > 20 && rect.height > 20 && !isExcluded(el);
+    const textBtn = Array.from(document.querySelectorAll("button, [role='button']")).find((el) => {
+      if (isExcluded(el)) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 20 && r.height > 20 && isSearchText(textOf(el));
     });
-
-    const textBtn = allButtons.find((el) => isSearchText(el.textContent || ""));
     if (textBtn) {
       textBtn.click();
-      return { mode: "text-button", label: (textBtn.textContent || "").trim().slice(0, 40) };
+      return { mode: "text-button", label: textOf(textBtn).slice(0, 40) };
     }
 
     return null;
@@ -1635,17 +1662,150 @@ async function fillDateInputs(page, departureDate, returnDate, tripType) {
   });
 }
 
-async function setPassengersAndClass(page, passengers, cabinClass) {
-  // Disabled on purpose for baseline stability while we stabilize submit/results flow.
-  // Keep the function entry point so we can re-enable a robust implementation later.
-  const requestedPassengers = Math.max(1, Math.min(9, Number(passengers || 1)));
+async function setPassengersAndClass(page, adults, children, cabinClass) {
+  const wantedAdults = Math.max(1, Math.min(9, Number(adults || 1)));
+  const wantedChildren = Math.max(0, Math.min(8, Number(children || 0)));
   const requestedCabin = normalizeCabinClass(cabinClass);
-  if (requestedPassengers !== 1 || requestedCabin !== "economy") {
-    console.log(
-      `[ESKY] Passenger/class adjustment is temporarily disabled; continuing with site defaults (requested passengers=${requestedPassengers}, cabin=${requestedCabin})`
-    );
+
+  if (wantedAdults === 1 && wantedChildren === 0 && requestedCabin === "economy") {
+    console.log("[ESKY] Passengers/class at defaults (1 adult, 0 children, economy) — skipping panel");
+    return true;
   }
-  return false;
+
+  // Returns centre coordinates of a DOM element, or null if not found/visible.
+  const getCoordsOf = async (evalFn, arg) => {
+    const coords = arg !== undefined ? await page.evaluate(evalFn, arg) : await page.evaluate(evalFn);
+    return coords && Number.isFinite(coords.x) && Number.isFinite(coords.y) ? coords : null;
+  };
+
+  const isVis = `(el) => { const r = el.getBoundingClientRect(), s = window.getComputedStyle(el); return r.width > 4 && r.height > 4 && s.display !== "none" && s.visibility !== "hidden"; }`;
+
+  try {
+    // 1. Open the Pasageri panel — get coords, then use real mouse click so React sees it.
+    const triggerCoords = await getCoordsOf(() => {
+      const isVis = (el) => { const r = el.getBoundingClientRect(), s = window.getComputedStyle(el); return r.width > 20 && r.height > 10 && s.display !== "none" && s.visibility !== "hidden"; };
+      const el = Array.from(document.querySelectorAll("*")).find((el) => {
+        if (!isVis(el)) return false;
+        const text = (el.value || el.getAttribute("placeholder") || el.getAttribute("aria-label") || el.textContent || "").trim();
+        return /pasager/i.test(text) && text.length < 200;
+      });
+      if (!el) return null;
+      el.scrollIntoView({ block: "center" });
+      const r = el.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    });
+
+    if (!triggerCoords) {
+      console.log("[ESKY] setPassengersAndClass: Pasageri trigger not found");
+      return false;
+    }
+    await page.mouse.click(triggerCoords.x, triggerCoords.y);
+    await delay(800);
+
+    // 2. Helper: find the counter row for a label, read current count, return coords of +/- button.
+    const getCounterAction = async (labelPattern, wantMore) => {
+      return getCoordsOf(({ pattern, more }) => {
+        const isVis = (el) => { const r = el.getBoundingClientRect(), s = window.getComputedStyle(el); return r.width > 4 && r.height > 4 && s.display !== "none" && s.visibility !== "hidden"; };
+        const rx = new RegExp(pattern, "i");
+        for (const div of Array.from(document.querySelectorAll("div, li, section")).filter(isVis)) {
+          const txt = (div.textContent || "").trim();
+          if (!rx.test(txt) || txt.length > 200) continue;
+          const plusBtn = Array.from(div.querySelectorAll("button")).find((b) => (b.textContent || "").trim() === "+" && isVis(b));
+          const minusBtn = Array.from(div.querySelectorAll("button")).find((b) => /^[−\-–]$/.test((b.textContent || "").trim()) && isVis(b));
+          if (!plusBtn || !minusBtn) continue;
+          const btn = more ? plusBtn : minusBtn;
+          const r = btn.getBoundingClientRect();
+          return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+        }
+        return null;
+      }, { pattern: labelPattern, more: wantMore });
+    };
+
+    const readCounterValue = async (labelPattern) => {
+      return page.evaluate(({ pattern }) => {
+        const isVis = (el) => { const r = el.getBoundingClientRect(), s = window.getComputedStyle(el); return r.width > 4 && r.height > 4 && s.display !== "none" && s.visibility !== "hidden"; };
+        const rx = new RegExp(pattern, "i");
+        for (const div of Array.from(document.querySelectorAll("div, li, section")).filter(isVis)) {
+          const txt = (div.textContent || "").trim();
+          if (!rx.test(txt) || txt.length > 200) continue;
+          const plusBtn = Array.from(div.querySelectorAll("button")).find((b) => (b.textContent || "").trim() === "+" && isVis(b));
+          const minusBtn = Array.from(div.querySelectorAll("button")).find((b) => /^[−\-–]$/.test((b.textContent || "").trim()) && isVis(b));
+          if (!plusBtn || !minusBtn) continue;
+          const countEl = Array.from(div.querySelectorAll("span, div, p, strong")).find((el) => {
+            if (el.tagName === "BUTTON" || !isVis(el)) return false;
+            return /^\d+$/.test((el.textContent || "").trim()) && el.children.length === 0;
+          });
+          return countEl ? parseInt(countEl.textContent.trim(), 10) : null;
+        }
+        return null;
+      }, { pattern: labelPattern });
+    };
+
+    // 3. Adjust adults counter using real mouse clicks.
+    for (let i = 0; i < 10; i++) {
+      const current = await readCounterValue("adult");
+      if (current === null || current === wantedAdults) break;
+      const coords = await getCounterAction("adult", current < wantedAdults);
+      if (!coords) break;
+      await page.mouse.click(coords.x, coords.y);
+      await delay(300);
+    }
+
+    // 4. Adjust children counter.
+    for (let i = 0; i < 10; i++) {
+      const current = await readCounterValue("cop");
+      if (current === null || current === wantedChildren) break;
+      const coords = await getCounterAction("cop", current < wantedChildren);
+      if (!coords) break;
+      await page.mouse.click(coords.x, coords.y);
+      await delay(300);
+    }
+
+    // 5. Click the cabin class pill with a real mouse click.
+    const cabinCoords = await getCoordsOf(({ cabin }) => {
+      const isVis = (el) => { const r = el.getBoundingClientRect(), s = window.getComputedStyle(el); return r.width > 20 && r.height > 10 && s.display !== "none" && s.visibility !== "hidden"; };
+      const buttons = Array.from(document.querySelectorAll("button, [role='button'], label")).filter(isVis);
+      let target = null;
+      switch (cabin) {
+        case "economy":
+          target = buttons.find((b) => /economic/i.test(b.textContent || "") && !/premium/i.test(b.textContent || ""));
+          break;
+        case "premium_economy":
+          target = buttons.find((b) => /economic/i.test(b.textContent || "") && /premium/i.test(b.textContent || ""))
+            || buttons.find((b) => /premium/i.test(b.textContent || ""));
+          break;
+        case "business":
+          target = buttons.find((b) => /business/i.test(b.textContent || ""));
+          break;
+        case "first":
+          target = buttons.find((b) => /întâi|intai|first/i.test(b.textContent || ""));
+          break;
+      }
+      if (!target) return null;
+      target.scrollIntoView({ block: "center" });
+      const r = target.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    }, { cabin: requestedCabin });
+
+    if (cabinCoords) {
+      await page.mouse.click(cabinCoords.x, cabinCoords.y);
+      await delay(400);
+    } else {
+      console.log(`[ESKY] Cabin class button not found for: ${requestedCabin}`);
+    }
+
+    // 6. Close the panel (click outside, or Escape).
+    await page.keyboard.press("Escape");
+    await delay(500);
+
+    const finalAdults = await readCounterValue("adult");
+    const finalChildren = await readCounterValue("cop");
+    console.log(`[ESKY] Passengers set — adults: ${finalAdults ?? wantedAdults}, children: ${finalChildren ?? wantedChildren}, cabin: ${requestedCabin}`);
+    return true;
+  } catch (err) {
+    console.log(`[ESKY] setPassengersAndClass error: ${err.message}`);
+    return false;
+  }
 }
 
 function isHomeUrl(url) {
@@ -2041,6 +2201,10 @@ async function searchESky(searchQuery) {
     }
     await setTripType(page, searchQuery.tripType);
 
+    const queryAdults = Math.max(1, Number(searchQuery.adults || searchQuery.passengers || 1));
+    const queryChildren = Math.max(0, Number(searchQuery.children || 0));
+    await setPassengersAndClass(page, queryAdults, queryChildren, searchQuery.cabinClass);
+
     const originValue = buildPlaceInput(searchQuery.originCity, searchQuery.originAirportCode);
     const destinationValue = buildPlaceInput(searchQuery.destinationCity, searchQuery.destinationAirportCode);
     const expectedDestinationCode = resolveAirportCode(normalizeCity(searchQuery.destinationCity), searchQuery.destinationAirportCode);
@@ -2116,7 +2280,31 @@ async function searchESky(searchQuery) {
 
     let activePage = submitOutcome.activePage;
     let finalUrl = submitOutcome.finalUrl;
-    console.log(`[ESKY] Final URL: ${finalUrl}`);
+    console.log(`[ESKY] Final URL after form submit: ${finalUrl}`);
+
+    if (isHomeUrl(finalUrl)) {
+      const directUrl = buildDirectResultsUrl({
+        ...searchQuery,
+        originAirportCode: resolveAirportCode(normalizeCity(searchQuery.originCity), searchQuery.originAirportCode),
+        destinationAirportCode: resolveAirportCode(normalizeCity(searchQuery.destinationCity), searchQuery.destinationAirportCode),
+      });
+
+      if (directUrl) {
+        console.log(`[ESKY] Form submit stuck on home; navigating directly to: ${directUrl}`);
+        try {
+          if (activePage && !activePage.isClosed()) {
+            await activePage.goto(directUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+            await delay(3000);
+            finalUrl = await waitForResultsPage(activePage);
+            console.log(`[ESKY] Direct URL final: ${finalUrl}`);
+          }
+        } catch (navError) {
+          console.log(`[ESKY] Direct URL navigation failed: ${navError.message}`);
+        }
+      } else {
+        console.log("[ESKY] Cannot build direct URL (missing airport codes)");
+      }
+    }
 
     const normalizedSearch = {
       originCity: normalizeCity(searchQuery.originCity),
@@ -2131,7 +2319,9 @@ async function searchESky(searchQuery) {
       returnDate: searchQuery.returnDate || null,
       tripType: searchQuery.tripType || (searchQuery.returnDate ? "round_trip" : "one_way"),
       cabinClass: normalizeCabinClass(searchQuery.cabinClass),
-      passengers: Number(searchQuery.passengers || 1),
+      adults: Math.max(1, Number(searchQuery.adults || searchQuery.passengers || 1)),
+      children: Math.max(0, Number(searchQuery.children || 0)),
+      passengers: Math.max(1, Number(searchQuery.adults || searchQuery.passengers || 1)) + Math.max(0, Number(searchQuery.children || 0)),
     };
     const normalizationDiffs = [];
 

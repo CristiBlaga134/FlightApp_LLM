@@ -70,11 +70,18 @@ export type ChatSearchResponse = {
     | "suggestions"
     | "clarification"
     | "real_and_sample"
-    | "real_only";
+    | "real_only"
+    | "no_results";
   offers?: FlightOffer[];
   questions?: string[];
   suggestions?: string[];
   pendingFields?: string[];
+  noResultsSearch?: {
+    originCity: string | null;
+    destinationCity: string | null;
+    departureDate: string | null;
+    returnDate: string | null;
+  } | null;
   normalization?: {
     policy?: string;
     requiresUserConfirmation?: boolean;

@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Redirect } from 'expo-router';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import LottieView from 'lottie-react-native';
@@ -44,6 +45,15 @@ const featureCards = [
     title: 'Presentation-ready polish',
     text: 'Built to feel intentional enough for a serious product demo.',
   },
+];
+
+const WORLD_MAP_FILTERS = [
+  { keypath: "**", color: "#FFFFFF" },
+  // planes are grey so they pop off the gradient
+  ...(['plane', ...Array.from({ length: 26 }, (_, i) => `plane ${i + 2}`)].map(n => ({
+    keypath: `${n}.**`,
+    color: "#A0A0A0",
+  }))),
 ];
 
 type AuthMode = 'signin' | 'signup' | 'reset';
@@ -183,17 +193,13 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.background}>
-        <View style={styles.orbWarm} />
-        <View style={styles.orbCool} />
-        <View style={styles.orbAccentMid} />
-        <View style={styles.orbPrimaryBR} />
-        <View style={styles.orbTinyTL} />
-        <View style={styles.ringLarge} />
-        <View style={styles.ringMedium} />
-        <View style={styles.ringSmall} />
-        <View style={styles.gridVeil} />
-      </View>
+      <LinearGradient
+        colors={["#1E7BC2", "#3A96D0", "#73B9E2", "#BDD9EE", "#E5EDF4"]}
+        locations={[0, 0.22, 0.48, 0.70, 1]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -236,6 +242,7 @@ export default function LoginScreen() {
                     loop
                     resizeMode="contain"
                     style={styles.heroLottie}
+                    colorFilters={WORLD_MAP_FILTERS}
                   />
                 </View>
               </View>
@@ -248,6 +255,7 @@ export default function LoginScreen() {
                     loop
                     resizeMode="contain"
                     style={styles.heroLottieMobile}
+                    colorFilters={WORLD_MAP_FILTERS}
                   />
                 </View>
                 <Text style={styles.heroEyebrow}>Editorial travel assistant</Text>
@@ -455,103 +463,10 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#1E7BC2',
   },
   flex: {
     flex: 1,
-  },
-  background: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  orbWarm: {
-    position: 'absolute',
-    top: -40,
-    right: -20,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: Colors.primary,
-    opacity: 0.18,
-  },
-  orbCool: {
-    position: 'absolute',
-    bottom: 80,
-    left: -40,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: Colors.accent,
-    opacity: 0.14,
-  },
-  orbAccentMid: {
-    position: 'absolute',
-    top: '35%',
-    right: 60,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: Colors.accent,
-    opacity: 0.08,
-  },
-  orbPrimaryBR: {
-    position: 'absolute',
-    bottom: 160,
-    right: -30,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: Colors.primary,
-    opacity: 0.10,
-  },
-  orbTinyTL: {
-    position: 'absolute',
-    top: 80,
-    left: 60,
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: Colors.primary,
-    opacity: 0.11,
-  },
-  ringLarge: {
-    position: 'absolute',
-    top: '20%',
-    left: '25%',
-    width: 340,
-    height: 340,
-    borderRadius: 170,
-    borderWidth: 1,
-    borderColor: Colors.accent,
-    backgroundColor: 'transparent',
-    opacity: 0.13,
-  },
-  ringMedium: {
-    position: 'absolute',
-    bottom: 120,
-    right: 180,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    backgroundColor: 'transparent',
-    opacity: 0.15,
-  },
-  ringSmall: {
-    position: 'absolute',
-    top: 100,
-    right: 260,
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 1,
-    borderColor: Colors.accent,
-    backgroundColor: 'transparent',
-    opacity: 0.18,
-  },
-  gridVeil: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 250, 245, 0.78)',
   },
   container: {
     padding: Spacing.lg,
@@ -587,13 +502,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.accentSoft,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
   statusPillWarn: {
     backgroundColor: Colors.secondarySoft,
+    borderColor: 'transparent',
   },
   statusPillText: {
-    color: Colors.primaryDeep,
+    color: '#FFFFFF',
     fontFamily: Typography.sansBold,
     fontSize: 11,
   },
@@ -632,7 +550,7 @@ const styles = StyleSheet.create({
     height: 420,
   },
   heroEyebrow: {
-    color: Colors.accent,
+    color: 'rgba(255,255,255,0.75)',
     fontFamily: Typography.sansBold,
     fontSize: 11,
     textTransform: 'uppercase',
@@ -640,14 +558,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   heroTitle: {
-    color: Colors.textPrimary,
+    color: '#FFFFFF',
     fontFamily: Typography.display,
     fontSize: 38,
     lineHeight: 42,
     marginBottom: 12,
   },
   heroSubtitle: {
-    color: Colors.textSecondary,
+    color: 'rgba(255,255,255,0.82)',
     fontFamily: Typography.sans,
     fontSize: 15,
     lineHeight: 24,
@@ -725,7 +643,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   fieldCard: {
-    backgroundColor: Colors.surfaceSoft,
+    backgroundColor: '#E8F7FF',
     borderRadius: Radius.lg,
     padding: 14,
   },

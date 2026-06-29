@@ -26,6 +26,7 @@ export type UserProfile = {
   tripPace: string;
   bookingMode: string;
   needsAccessibleSeating: boolean;
+  photoBase64: string;
 };
 
 export type SavedSearch = {
@@ -78,6 +79,7 @@ const defaultProfile: UserProfile = {
   tripPace: 'City breaks & weekends',
   bookingMode: 'Flexible suggestions',
   needsAccessibleSeating: false,
+  photoBase64: '',
 };
 
 function formatProfileSyncError(error: unknown, phase: 'load' | 'save') {
@@ -192,6 +194,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
             ? remote.bookingMode
             : defaultProfile.bookingMode,
           needsAccessibleSeating: Boolean(remote.needsAccessibleSeating),
+          photoBase64: typeof remote.photoBase64 === 'string' ? remote.photoBase64 : '',
         });
 
         // Load recent searches from subcollection

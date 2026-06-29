@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Animated,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,10 +11,11 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter, type Href } from "expo-router";
+import { useRouter, useFocusEffect, type Href } from "expo-router";
 
 import {
   ChatApiError,
@@ -55,6 +57,13 @@ const QUICK_PROMPTS = [
   },
 ];
 
+const FEATURE_CARDS = [
+  { id: "search",   title: "Search Flights",  desc: "Routes, dates, budgets", icon: "airplane-takeoff", tint: "#C85F3D" },
+  { id: "bookings", title: "My Bookings",     desc: "Checkout history",       icon: "receipt",          tint: "#3B82F6" },
+  { id: "trips",    title: "Past Trips",      desc: "Saved searches",         icon: "compass-outline",  tint: "#10B981" },
+  { id: "profile",  title: "Travel Profile",  desc: "Your preferences",       icon: "account-cog",      tint: "#8B5CF6" },
+];
+
 const SURPRISE_PROMPTS = [
   "Surprise me — a cheap weekend escape to somewhere in Europe under 250 euro",
   "Take me somewhere warm and sunny, one-way, under 300 euro",
@@ -85,6 +94,13 @@ type Message = {
     needsDeparture: boolean;
     needsReturn: boolean;
     tripType: "one_way" | "round_trip" | null;
+  } | null;
+  noResults?: boolean;
+  noResultsSearch?: {
+    originCity: string | null;
+    destinationCity: string | null;
+    departureDate: string | null;
+    returnDate: string | null;
   } | null;
 };
 
@@ -462,6 +478,17 @@ export default function ChatScreen() {
     savedSearches,
     setPendingChatPrefill,
   } = useUserProfile();
+  const router = useRouter();
+  const screenOpacity = useRef(new Animated.Value(0)).current;
+  useFocusEffect(
+    useCallback(() => {
+      screenOpacity.setValue(0);
+      const fade = Animated.timing(screenOpacity, { toValue: 1, duration: 260, useNativeDriver: true });
+      fade.start();
+      return () => fade.stop();
+    }, [])
+  );
+
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -469,6 +496,7 @@ export default function ChatScreen() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const listRef = useRef<FlatList<Message> | null>(null);
+  const inputRef = useRef<import("react-native").TextInput | null>(null);
   const sendMessageRef = useRef<(prefilledText?: string) => Promise<void>>(async () => {});
   const tabBarHeight = useBottomTabBarHeight();
   const composerBottomOffset = tabBarHeight + 18;
@@ -593,6 +621,27 @@ export default function ChatScreen() {
         return;
       }
 
+      if (result.mode === "no_results") {
+        const s = result.noResultsSearch;
+        const from = s?.originCity ?? "origin";
+        const to = s?.destinationCity ?? "destination";
+        const date = s?.departureDate ? formatShortDate(s.departureDate) : "selected date";
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === typingId
+              ? {
+                  ...msg,
+                  typing: false,
+                  text: `No flights found from ${from} to ${to} on ${date}.`,
+                  noResults: true,
+                  noResultsSearch: s ?? null,
+                }
+              : msg
+          )
+        );
+        return;
+      }
+
       let introText = "";
       const offerCount = (result.offers ?? []).length;
       const liveSuppliers = Array.from(
@@ -666,16 +715,20 @@ export default function ChatScreen() {
   );
 
   return (
+    <Animated.View style={[styles.flex, { opacity: screenOpacity }]}>
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={16}
       >
-        <View style={styles.pageBackground}>
-          <View style={styles.glowTop} />
-          <View style={styles.glowBottom} />
-
+        <LinearGradient
+          colors={["#1E7BC2", "#3A96D0", "#73B9E2", "#BDD9EE", "#E5EDF4"]}
+          locations={[0, 0.22, 0.48, 0.70, 1]}
+          style={styles.pageBackground}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+        >
           <FlatList
             ref={listRef}
             data={messages}
@@ -689,183 +742,262 @@ export default function ChatScreen() {
             ]}
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
             ListHeaderComponent={
-              <View style={styles.headerStack}>
-                <View style={styles.heroCard}>
-                  <View style={styles.heroGlowOne} />
-                  <View style={styles.heroGlowTwo} />
-
-                  <View style={styles.heroTopRow}>
+              messages.length === 0 ? (
+                <View style={styles.homeSection}>
+                  {/* Top bar */}
+                  <View style={styles.homeTopBar}>
                     <View style={styles.statusPill}>
-                      <View
-                        style={[
-                          styles.statusDot,
-                          health?.ok ? styles.statusDotOk : styles.statusDotDown,
-                        ]}
-                      />
+                      <View style={[styles.statusDot, health?.ok ? styles.statusDotOk : styles.statusDotDown]} />
                       <Text style={styles.statusText}>
                         {health?.ok
-                          ? `Backend live${health.scraper?.ready ? " · scraper ready" : " · scraper limited"}`
-                          : healthError || "Backend unavailable"}
+                          ? health.scraper?.ready ? "Live · scraper ready" : "Live"
+                          : healthError ? "Offline" : "Connecting…"}
                       </Text>
                     </View>
-
-                    {messages.length > 0 ? (
-                      <Pressable style={styles.refreshPill} onPress={handleStartFresh}>
-                        <Feather name="rotate-ccw" size={14} color={Colors.textOnDark} />
-                        <Text style={styles.refreshPillText}>New trip</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-
-                  <Text style={styles.heroEyebrow}>Concierge cockpit</Text>
-                  <Text style={styles.heroTitle}>Plan a trip that feels chosen, not searched.</Text>
-                  <Text style={styles.heroSubtitle}>
-                    {profile.firstName}, describe the route, budget, dates, or baggage rules and I will turn it into a guided shortlist.
-                  </Text>
-
-                  <View style={styles.heroMetricRow}>
-                    <View style={styles.metricCard}>
-                      <Text style={styles.metricValue}>{savedSearches.length}</Text>
-                      <Text style={styles.metricLabel}>Recent searches</Text>
-                    </View>
-
-                    <View style={styles.metricCard}>
-                      <Text style={styles.metricValue}>{health?.scraper?.ready ? "Live" : "Demo"}</Text>
-                      <Text style={styles.metricLabel}>Search mode</Text>
-                    </View>
-
-                    <View style={styles.metricCardWide}>
-                      <Text style={styles.metricValueSmall}>{profile.cabinStyle}</Text>
-                      <Text style={styles.metricLabel}>Preference lens</Text>
+                    <View style={styles.avatarCircle}>
+                      {profile.photoBase64 ? (
+                        <Image source={{ uri: profile.photoBase64 }} style={styles.avatarImage} />
+                      ) : (
+                        <Text style={styles.avatarText}>{(profile.firstName || "S")[0].toUpperCase()}</Text>
+                      )}
                     </View>
                   </View>
-                </View>
 
-                {messages.length === 0 ? (
-                  <View style={styles.runwayCard}>
-                    <View style={styles.runwayHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.sectionEyebrow}>Quick launch</Text>
-                        <Text style={styles.sectionTitle}>Choose a starting mood</Text>
-                      </View>
+                  {/* Greeting */}
+                  <Text style={styles.greetingName}>Hi, {profile.firstName || "Traveler"}!</Text>
+                  <Text style={styles.greetingSub}>How can I assist you today?</Text>
 
-                      <Pressable style={styles.surpriseButton} onPress={handleSurpriseMe} disabled={isSending}>
-                        <MaterialCommunityIcons name="dice-5" size={18} color={Colors.textOnDark} />
-                        <Text style={styles.surpriseButtonText}>Surprise me</Text>
-                      </Pressable>
-                    </View>
+                  {/* CTA */}
+                  <Pressable onPress={() => inputRef.current?.focus()}>
+                    <LinearGradient
+                      colors={[Colors.primary, Colors.secondary]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.startSearchBtn}
+                    >
+                      <Feather name="search" size={18} color={Colors.white} />
+                      <Text style={styles.startSearchBtnText}>Start New Search</Text>
+                    </LinearGradient>
+                  </Pressable>
 
-                    <Text style={styles.runwayBodyText}>
-                      Use one of these prompts to demo the assistant quickly, or type your own route below.
-                    </Text>
-
-                    <View style={styles.promptGrid}>
-                      {QUICK_PROMPTS.map((prompt) => (
-                        <Pressable
-                          key={prompt.id}
-                          style={styles.promptCard}
-                          onPress={() => sendMessage(prompt.prompt)}
-                          disabled={isSending}
-                        >
-                          <View style={styles.promptIconWrap}>
-                            <MaterialCommunityIcons name={prompt.icon as any} size={20} color={Colors.accent} />
-                          </View>
-                          <Text style={styles.promptTitle}>{prompt.title}</Text>
-                          <Text style={styles.promptMeta}>{prompt.meta}</Text>
-                          <Text style={styles.promptBody}>{prompt.prompt}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
+                  {/* Quick actions */}
+                  <View style={styles.quickRow}>
+                    <Pressable style={styles.quickBtn} onPress={handleSurpriseMe} disabled={isSending}>
+                      <MaterialCommunityIcons name="dice-5" size={20} color="rgba(255,255,255,0.95)" />
+                      <Text style={styles.quickBtnLabel}>Surprise me</Text>
+                    </Pressable>
+                    <Pressable style={styles.quickBtn} onPress={() => router.push('/explore' as Href)}>
+                      <Feather name="clock" size={20} color="rgba(255,255,255,0.95)" />
+                      <Text style={styles.quickBtnLabel}>Recent trips</Text>
+                    </Pressable>
+                    <Pressable style={styles.quickBtn} onPress={() => router.push('/profile' as Href)}>
+                      <Feather name="user" size={20} color="rgba(255,255,255,0.95)" />
+                      <Text style={styles.quickBtnLabel}>Profile</Text>
+                    </Pressable>
                   </View>
-                ) : null}
-              </View>
-            }
-            renderItem={({ item }) => {
-              const isUser = item.role === "user";
 
-              return (
-                <View style={[styles.messageRow, isUser ? styles.userRow : styles.assistantRow]}>
-                  <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-                    <View style={styles.messageHeader}>
-                      <Text style={[styles.messageRole, isUser ? styles.userRole : styles.assistantRole]}>
-                        {isUser ? "You" : "Flight assistant"}
-                      </Text>
-                      {!isUser ? (
-                        <MaterialCommunityIcons name="airplane-search" size={16} color={Colors.accent} />
-                      ) : null}
-                    </View>
-
-                    {item.typing && isSending ? (
-                      <View style={styles.typingWrap}>
-                        <TypingDots />
-                        <Text style={styles.typingLabel}>Mapping routes and fares…</Text>
-                      </View>
-                    ) : (
-                      <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
-                        {item.text}
-                      </Text>
-                    )}
-
-                    {item.datePicker && !item.typing ? (
-                      <InlineDatePicker
-                        needsDeparture={item.datePicker.needsDeparture}
-                        needsReturn={item.datePicker.needsReturn}
-                        tripType={item.datePicker.tripType}
-                        onConfirm={(text) => sendMessage(text)}
-                        disabled={isSending}
-                      />
-                    ) : null}
-
-                    {item.offers && item.offers.length > 0 ? (
-                      <View style={styles.offersList}>
-                        {item.comparisonSummary ? (
-                          <View style={styles.comparisonBox}>
-                            <Text style={styles.comparisonTitle}>Cheapest comparison</Text>
-                            <Text style={styles.comparisonText}>{item.comparisonSummary}</Text>
-                          </View>
-                        ) : null}
-
-                        <Text style={styles.offerSectionTitle}>Suggested fare board</Text>
-                        {item.offers.map((offer, index) => renderOfferCard(offer, index, item.cheapestOfferId))}
-                      </View>
-                    ) : null}
-
-                    {item.warning ? (
-                      <View style={styles.warningBox}>
-                        <Feather name="alert-circle" size={15} color={Colors.primaryDeep} />
-                        <Text style={styles.warningText}>{item.warning}</Text>
-                      </View>
-                    ) : null}
-
-                    {item.normalizationSummary ? (
-                      <View style={styles.normalizationBox}>
-                        <Text style={styles.normalizationTitle}>Normalization</Text>
-                        <Text style={styles.normalizationText}>{item.normalizationSummary}</Text>
-                        {item.normalizedDateNote ? (
-                          <Text style={styles.normalizationDate}>{item.normalizedDateNote}</Text>
-                        ) : null}
-                      </View>
-                    ) : null}
-
-                    {item.requestId ? (
-                      <Text style={styles.requestIdText}>Request ID · {item.requestId}</Text>
-                    ) : null}
-
-                    {item.suggestions && item.suggestions.length > 0 ? (
-                      <View style={styles.suggestionsList}>
-                        {item.suggestions.map((suggestion) => (
+                  {/* Feature cards 2×2 */}
+                  <View style={styles.featureGrid}>
+                    {[FEATURE_CARDS.slice(0, 2), FEATURE_CARDS.slice(2, 4)].map((row, ri) => (
+                      <View key={ri} style={styles.featureRow}>
+                        {row.map((card) => (
                           <Pressable
-                            key={`${item.id}-${suggestion}`}
-                            style={styles.suggestionChip}
-                            onPress={() => sendMessage(suggestion)}
-                            disabled={isSending}
+                            key={card.id}
+                            style={{ flex: 1 }}
+                            onPress={() => {
+                              if (card.id === "search") inputRef.current?.focus();
+                              else if (card.id === "bookings") router.push({ pathname: "/explore", params: { scrollTo: "bookings" } } as any);
+                              else if (card.id === "trips") router.push({ pathname: "/explore", params: { scrollTo: "searches" } } as any);
+                              else if (card.id === "profile") router.push("/profile" as Href);
+                            }}
                           >
-                            <Text style={styles.suggestionChipText}>{suggestion}</Text>
+                            <LinearGradient colors={['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.featureCard}>
+                              <View style={[styles.featureIconWrap, { backgroundColor: card.tint + "22" }]}>
+                                <MaterialCommunityIcons name={card.icon as any} size={22} color={card.tint} />
+                              </View>
+                              <Text style={styles.featureCardTitle}>{card.title}</Text>
+                              <Text style={styles.featureCardDesc}>{card.desc}</Text>
+                            </LinearGradient>
                           </Pressable>
                         ))}
                       </View>
+                    ))}
+                  </View>
+
+                  {/* Quick prompt suggestions */}
+                  <Text style={styles.suggestionsLabel}>Try asking…</Text>
+                  <View style={styles.suggestionPromptList}>
+                    {QUICK_PROMPTS.map((item) => (
+                      <Pressable
+                        key={item.id}
+                        onPress={() => sendMessage(item.prompt)}
+                        disabled={isSending}
+                      >
+                        <LinearGradient colors={['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.suggestionPromptCard}>
+                          <View style={styles.suggestionPromptIcon}>
+                            <MaterialCommunityIcons name={item.icon as any} size={18} color={Colors.primary} />
+                          </View>
+                          <View style={styles.suggestionPromptText}>
+                            <Text style={styles.suggestionPromptTitle}>{item.title}</Text>
+                            <Text style={styles.suggestionPromptMeta}>{item.meta}</Text>
+                          </View>
+                          <Feather name="arrow-right" size={14} color={Colors.textMuted} />
+                        </LinearGradient>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.chatHeaderBar}>
+                  <View>
+                    <Text style={styles.chatBarTitle}>Flight Assistant</Text>
+                    <Text style={styles.chatBarSub}>{messages.length} message{messages.length !== 1 ? "s" : ""}</Text>
+                  </View>
+                  <Pressable style={styles.chatBarReset} onPress={handleStartFresh}>
+                    <Feather name="rotate-ccw" size={13} color={Colors.primary} />
+                    <Text style={styles.chatBarResetText}>New search</Text>
+                  </Pressable>
+                </View>
+              )
+            }
+            renderItem={({ item }) => {
+              const isUser = item.role === "user";
+              const bubbleStyle = [styles.messageBubble, isUser ? styles.userBubble : styles.assistantBubble];
+
+              const bubbleContent = (
+                <>
+                  <View style={styles.messageHeader}>
+                    <Text style={[styles.messageRole, isUser ? styles.userRole : styles.assistantRole]}>
+                      {isUser ? "You" : "Flight assistant"}
+                    </Text>
+                    {!isUser ? (
+                      <MaterialCommunityIcons name="airplane-search" size={16} color={Colors.accent} />
                     ) : null}
                   </View>
+
+                  {item.typing && isSending ? (
+                    <View style={styles.typingWrap}>
+                      <TypingDots />
+                      <Text style={styles.typingLabel}>Mapping routes and fares…</Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
+                      {item.text}
+                    </Text>
+                  )}
+
+                  {item.datePicker && !item.typing ? (
+                    <InlineDatePicker
+                      needsDeparture={item.datePicker.needsDeparture}
+                      needsReturn={item.datePicker.needsReturn}
+                      tripType={item.datePicker.tripType}
+                      onConfirm={(text) => sendMessage(text)}
+                      disabled={isSending}
+                    />
+                  ) : null}
+
+                  {item.noResults ? (
+                    <View style={styles.noResultsCard}>
+                      <MaterialCommunityIcons name="airplane-off" size={36} color={Colors.textMuted} />
+                      <Text style={styles.noResultsTitle}>No flights available</Text>
+                      <Text style={styles.noResultsDesc}>
+                        We couldn't find any flights matching these parameters. Try different dates, airports, or a nearby route.
+                      </Text>
+                      <View style={styles.noResultsActions}>
+                        <Pressable
+                          style={styles.noResultsResetBtn}
+                          onPress={handleStartFresh}
+                        >
+                          <Feather name="rotate-ccw" size={14} color={Colors.textOnDark} />
+                          <Text style={styles.noResultsResetText}>New search</Text>
+                        </Pressable>
+                        <Pressable
+                          style={styles.noResultsEditBtn}
+                          onPress={() => {
+                            const s = item.noResultsSearch;
+                            if (s) {
+                              const parts: string[] = [];
+                              if (s.originCity) parts.push(`from ${s.originCity}`);
+                              if (s.destinationCity) parts.push(`to ${s.destinationCity}`);
+                              if (s.departureDate) parts.push(`on ${s.departureDate}`);
+                              setInput(parts.join(" "));
+                            }
+                            inputRef.current?.focus();
+                          }}
+                        >
+                          <Feather name="edit-2" size={14} color={Colors.accent} />
+                          <Text style={styles.noResultsEditText}>Edit search</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {item.offers && item.offers.length > 0 ? (
+                    <View style={styles.offersList}>
+                      {item.comparisonSummary ? (
+                        <View style={styles.comparisonBox}>
+                          <Text style={styles.comparisonTitle}>Cheapest comparison</Text>
+                          <Text style={styles.comparisonText}>{item.comparisonSummary}</Text>
+                        </View>
+                      ) : null}
+
+                      <Text style={styles.offerSectionTitle}>Suggested fare board</Text>
+                      {item.offers.map((offer, index) => renderOfferCard(offer, index, item.cheapestOfferId))}
+                    </View>
+                  ) : null}
+
+                  {item.warning ? (
+                    <View style={styles.warningBox}>
+                      <Feather name="alert-circle" size={15} color={Colors.primaryDeep} />
+                      <Text style={styles.warningText}>{item.warning}</Text>
+                    </View>
+                  ) : null}
+
+                  {item.normalizationSummary ? (
+                    <View style={styles.normalizationBox}>
+                      <Text style={styles.normalizationTitle}>Normalization</Text>
+                      <Text style={styles.normalizationText}>{item.normalizationSummary}</Text>
+                      {item.normalizedDateNote ? (
+                        <Text style={styles.normalizationDate}>{item.normalizedDateNote}</Text>
+                      ) : null}
+                    </View>
+                  ) : null}
+
+                  {item.requestId ? (
+                    <Text style={styles.requestIdText}>Request ID · {item.requestId}</Text>
+                  ) : null}
+
+                  {item.suggestions && item.suggestions.length > 0 ? (
+                    <View style={styles.suggestionsList}>
+                      {item.suggestions.map((suggestion) => (
+                        <Pressable
+                          key={`${item.id}-${suggestion}`}
+                          style={styles.suggestionChip}
+                          onPress={() => sendMessage(suggestion)}
+                          disabled={isSending}
+                        >
+                          <Text style={styles.suggestionChipText}>{suggestion}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
+                </>
+              );
+
+              return (
+                <View style={[styles.messageRow, isUser ? styles.userRow : styles.assistantRow]}>
+                  {isUser ? (
+                    <LinearGradient
+                      colors={[Colors.primary, Colors.primaryDeep]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={bubbleStyle}
+                    >
+                      {bubbleContent}
+                    </LinearGradient>
+                  ) : (
+                    <View style={bubbleStyle}>{bubbleContent}</View>
+                  )}
                 </View>
               );
             }}
@@ -883,6 +1015,7 @@ export default function ChatScreen() {
 
             <View style={styles.composerCard}>
               <TextInput
+                ref={inputRef}
                 style={styles.input}
                 placeholder="Where do you want to fly next?"
                 placeholderTextColor={Colors.textMuted}
@@ -905,289 +1038,248 @@ export default function ChatScreen() {
                 </Pressable>
 
                 <Pressable
-                  style={[styles.primaryComposerButton, isSending && styles.buttonDisabled]}
+                  style={[{ flex: 1 }, isSending && styles.buttonDisabled]}
                   onPress={() => sendMessage()}
                   disabled={isSending}
                 >
-                  <Text style={styles.primaryComposerButtonText}>{isSending ? "Working" : "Send"}</Text>
-                  <Feather name="arrow-up-right" size={16} color={Colors.textOnDark} />
+                  <LinearGradient
+                    colors={[Colors.primary, Colors.secondary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.primaryComposerButton}
+                  >
+                    <Text style={styles.primaryComposerButtonText}>{isSending ? "Working" : "Send"}</Text>
+                    <Feather name="arrow-up-right" size={16} color={Colors.textOnDark} />
+                  </LinearGradient>
                 </Pressable>
               </View>
             </View>
           </View>
-        </View>
+        </LinearGradient>
       </KeyboardAvoidingView>
     </SafeAreaView>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  pageBackground: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  glowTop: {
-    position: "absolute",
-    top: -60,
-    right: -40,
-    width: 210,
-    height: 210,
-    borderRadius: 105,
-    backgroundColor: Colors.secondarySoft,
-    opacity: 0.75,
-  },
-  glowBottom: {
-    position: "absolute",
-    bottom: 120,
-    left: -70,
-    width: 230,
-    height: 230,
-    borderRadius: 115,
-    backgroundColor: Colors.accentSoft,
-    opacity: 0.52,
-  },
+  flex: { flex: 1 },
+  safeArea: { flex: 1, backgroundColor: "#E5EDF4" },
+  pageBackground: { flex: 1 },
   listContent: {
     paddingHorizontal: 18,
     paddingTop: 10,
     paddingBottom: 170,
   },
-  headerStack: {
-    gap: 16,
-    marginBottom: 8,
+
+  // ── Home screen (empty state) ─────────────────────────────────
+  homeSection: {
+    gap: 18,
+    paddingTop: 8,
+    marginBottom: 16,
   },
-  heroCard: {
-    overflow: "hidden",
-    backgroundColor: Colors.surfaceDark,
-    borderRadius: Radius.xl,
-    padding: 20,
-    ...Shadows.card,
-  },
-  heroGlowOne: {
-    position: "absolute",
-    top: -25,
-    right: -20,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: Colors.primary,
-    opacity: 0.22,
-  },
-  heroGlowTwo: {
-    position: "absolute",
-    bottom: -45,
-    left: -30,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: Colors.accent,
-    opacity: 0.18,
-  },
-  heroTopRow: {
+  homeTopBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 18,
   },
   statusPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "rgba(255, 248, 240, 0.1)",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "rgba(255,255,255,0.18)",
     borderWidth: 1,
-    borderColor: "rgba(255, 248, 240, 0.14)",
+    borderColor: "rgba(255,255,255,0.30)",
     borderRadius: Radius.pill,
     flexShrink: 1,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusDotOk: {
-    backgroundColor: Colors.success,
-  },
-  statusDotDown: {
-    backgroundColor: Colors.error,
-  },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusDotOk: { backgroundColor: "#4FFFB0" },
+  statusDotDown: { backgroundColor: Colors.error },
   statusText: {
-    color: Colors.textOnDark,
+    color: "#FFFFFF",
     fontFamily: Typography.sansSemiBold,
     fontSize: 11,
   },
-  refreshPill: {
+  avatarCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: Colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
+  avatarText: {
+    color: Colors.white,
+    fontFamily: Typography.sansBold,
+    fontSize: 18,
+  },
+  greetingName: {
+    color: "#FFFFFF",
+    fontFamily: Typography.sansBold,
+    fontSize: 32,
+    letterSpacing: -0.5,
+    lineHeight: 38,
+  },
+  greetingSub: {
+    color: "rgba(255,255,255,0.80)",
+    fontFamily: Typography.sans,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: -6,
+  },
+  startSearchBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: Radius.pill,
+    justifyContent: "center",
+    gap: 10,
     backgroundColor: Colors.primary,
+    borderRadius: Radius.pill,
+    paddingVertical: 16,
+    ...Shadows.glow,
   },
-  refreshPillText: {
-    color: Colors.textOnDark,
-    fontFamily: Typography.sansSemiBold,
-    fontSize: 12,
-  },
-  heroEyebrow: {
-    color: Colors.secondarySoft,
+  startSearchBtnText: {
+    color: Colors.white,
     fontFamily: Typography.sansBold,
-    fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
-    marginBottom: 10,
+    fontSize: 16,
   },
-  heroTitle: {
-    color: Colors.textOnDark,
-    fontFamily: Typography.display,
-    fontSize: 40,
-    lineHeight: 42,
-    marginBottom: 10,
-    maxWidth: 320,
-  },
-  heroSubtitle: {
-    color: "rgba(255, 248, 240, 0.78)",
-    fontFamily: Typography.sans,
-    fontSize: 14,
-    lineHeight: 22,
-    marginBottom: 18,
-    maxWidth: 330,
-  },
-  heroMetricRow: {
+  quickRow: {
     flexDirection: "row",
     gap: 10,
   },
-  metricCard: {
+  quickBtn: {
     flex: 1,
-    padding: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.22)",
     borderRadius: Radius.lg,
-    backgroundColor: "rgba(255, 249, 242, 0.1)",
+    paddingVertical: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 249, 242, 0.12)",
+    borderColor: "rgba(255,255,255,0.30)",
   },
-  metricCardWide: {
-    flex: 1.3,
-    padding: 14,
-    borderRadius: Radius.lg,
-    backgroundColor: "rgba(255, 249, 242, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 249, 242, 0.12)",
-  },
-  metricValue: {
-    color: Colors.textOnDark,
-    fontFamily: Typography.display,
-    fontSize: 28,
-    lineHeight: 28,
-    marginBottom: 6,
-  },
-  metricValueSmall: {
-    color: Colors.textOnDark,
-    fontFamily: Typography.sansSemiBold,
-    fontSize: 13,
-    marginBottom: 6,
-  },
-  metricLabel: {
-    color: "rgba(255, 248, 240, 0.72)",
+  quickBtnLabel: {
+    color: "rgba(255,255,255,0.90)",
     fontFamily: Typography.sansMedium,
-    fontSize: 11,
+    fontSize: 10,
+    textAlign: "center",
   },
-  runwayCard: {
-    backgroundColor: Colors.surfaceRaised,
+  featureGrid: { gap: 10 },
+  featureRow: { flexDirection: "row", gap: 10 },
+  featureCard: {
     borderRadius: Radius.xl,
-    padding: 18,
+    padding: 16,
+    gap: 6,
     borderWidth: 1,
     borderColor: Colors.border,
     ...Shadows.soft,
   },
-  runwayHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-    marginBottom: 10,
-  },
-  sectionEyebrow: {
-    color: Colors.accent,
-    fontFamily: Typography.sansBold,
-    fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  sectionTitle: {
-    color: Colors.textPrimary,
-    fontFamily: Typography.display,
-    fontSize: 30,
-    lineHeight: 30,
-  },
-  runwayBodyText: {
-    color: Colors.textSecondary,
-    fontFamily: Typography.sans,
-    fontSize: 14,
-    lineHeight: 21,
-    marginBottom: 16,
-  },
-  surpriseButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.primary,
-    flexShrink: 0,
-    ...Shadows.glow,
-  },
-  surpriseButtonText: {
-    color: Colors.textOnDark,
-    fontFamily: Typography.sansSemiBold,
-    fontSize: 12,
-  },
-  promptGrid: {
-    gap: 12,
-  },
-  promptCard: {
-    backgroundColor: Colors.surfaceSoft,
-    borderRadius: Radius.lg,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  promptIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  featureIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.accentSoft,
-    marginBottom: 12,
-  },
-  promptTitle: {
-    color: Colors.textPrimary,
-    fontFamily: Typography.sansBold,
-    fontSize: 16,
     marginBottom: 4,
   },
-  promptMeta: {
-    color: Colors.accent,
+  featureCardTitle: {
+    color: Colors.textPrimary,
+    fontFamily: Typography.sansBold,
+    fontSize: 14,
+  },
+  featureCardDesc: {
+    color: Colors.textMuted,
+    fontFamily: Typography.sans,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+
+  // ── Quick prompt suggestions ──────────────────────────────────
+  suggestionsLabel: {
+    color: '#FFFFFF',
+    fontFamily: Typography.sansSemiBold,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginTop: -4,
+  },
+  suggestionPromptList: {
+    gap: 10,
+  },
+  suggestionPromptCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    ...Shadows.soft,
+  },
+  suggestionPromptIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.primary + "18",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  suggestionPromptText: {
+    flex: 1,
+    gap: 2,
+  },
+  suggestionPromptTitle: {
+    color: Colors.textPrimary,
+    fontFamily: Typography.sansSemiBold,
+    fontSize: 13,
+  },
+  suggestionPromptMeta: {
+    color: Colors.textMuted,
+    fontFamily: Typography.sans,
+    fontSize: 11,
+  },
+
+  // ── Active chat header ────────────────────────────────────────
+  chatHeaderBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+    paddingTop: 8,
+  },
+  chatBarTitle: {
+    color: "#FFFFFF",
+    fontFamily: Typography.sansBold,
+    fontSize: 20,
+  },
+  chatBarSub: {
+    color: "rgba(255,255,255,0.70)",
+    fontFamily: Typography.sansMedium,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  chatBarReset: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: Radius.pill,
+    backgroundColor: "rgba(255,255,255,0.20)",
+  },
+  chatBarResetText: {
+    color: "#FFFFFF",
     fontFamily: Typography.sansSemiBold,
     fontSize: 12,
-    marginBottom: 8,
-  },
-  promptBody: {
-    color: Colors.textSecondary,
-    fontFamily: Typography.sans,
-    fontSize: 13,
-    lineHeight: 19,
   },
   messageRow: {
     marginBottom: 14,
@@ -1618,7 +1710,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     flex: 1,
-    backgroundColor: Colors.primary,
     borderRadius: Radius.pill,
     paddingVertical: 14,
   },
@@ -1629,5 +1720,64 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.7,
+  },
+
+  // ── No results card ───────────────────────────────────────────
+  noResultsCard: {
+    marginTop: 16,
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.skySoft,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.accentSoft,
+    padding: 20,
+  },
+  noResultsTitle: {
+    color: Colors.textPrimary,
+    fontFamily: Typography.sansBold,
+    fontSize: 16,
+  },
+  noResultsDesc: {
+    color: Colors.textSecondary,
+    fontFamily: Typography.sans,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+  },
+  noResultsActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
+  noResultsResetBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: Radius.pill,
+  },
+  noResultsResetText: {
+    color: Colors.textOnDark,
+    fontFamily: Typography.sansBold,
+    fontSize: 13,
+  },
+  noResultsEditBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: Colors.surfaceAccent,
+    borderWidth: 1,
+    borderColor: Colors.accentSoft,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: Radius.pill,
+  },
+  noResultsEditText: {
+    color: Colors.accent,
+    fontFamily: Typography.sansBold,
+    fontSize: 13,
   },
 });

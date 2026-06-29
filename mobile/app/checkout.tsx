@@ -552,10 +552,10 @@ export default function CheckoutScreen() {
               source={
                 paymentResult.paymentSession.status === 'processing'
                   ? require('../assets/Success checkmark.json')
-                  : require('../assets/BookingSucces.json')
+                  : require('../assets/Sastaticket Confirmation.json')
               }
               autoPlay
-              loop={false}
+              loop
               style={styles.confirmationLottie}
             />
             <Text style={styles.confirmationEyebrow}>
@@ -567,14 +567,14 @@ export default function CheckoutScreen() {
             </Text>
 
             <View style={styles.confirmationMetaCard}>
-              <Text style={styles.summaryLabel}>Route</Text>
-              <Text style={styles.summaryValue}>{offer.originCity} → {offer.destinationCity}</Text>
+              <Text style={styles.confirmationMetaLabel}>Route</Text>
+              <Text style={styles.confirmationMetaValue}>{offer.originCity} → {offer.destinationCity}</Text>
               <Text style={styles.confirmationDetail}>{formatOfferWindow(offer.departureDate, offer.returnDate)}</Text>
 
               <View style={styles.confirmationDivider} />
 
-              <Text style={styles.summaryLabel}>Payment</Text>
-              <Text style={styles.summaryValue}>{formatMoney(booking.amount, booking.currency)}</Text>
+              <Text style={styles.confirmationMetaLabel}>Payment</Text>
+              <Text style={styles.confirmationMetaValue}>{formatMoney(booking.amount, booking.currency)}</Text>
               <Text style={styles.confirmationDetail}>
                 {booking.paymentMethod.brand.toUpperCase()} ending in {booking.paymentMethod.last4}
               </Text>
@@ -1230,7 +1230,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    backgroundColor: '#E8F7FF',
     paddingHorizontal: 14,
     color: Colors.textPrimary,
     fontFamily: Typography.sansMedium,
@@ -1248,11 +1248,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   testCardChip: {
-    backgroundColor: Colors.surfaceSoft,
+    backgroundColor: Colors.surfaceAccent,
     borderRadius: Radius.lg,
     padding: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.accentSoft,
     gap: 2,
   },
   testCardLabel: {
@@ -1396,8 +1396,8 @@ const styles = StyleSheet.create({
     ...Shadows.card,
   },
   confirmationLottie: {
-    width: 280,
-    height: 280,
+    width: 160,
+    height: 160,
     alignSelf: 'center',
   },
   confirmationEyebrow: {
@@ -1434,6 +1434,18 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: Colors.border,
     marginVertical: 6,
+  },
+  confirmationMetaLabel: {
+    color: Colors.textMuted,
+    fontFamily: Typography.sansBold,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  confirmationMetaValue: {
+    color: Colors.textPrimary,
+    fontFamily: Typography.sansBold,
+    fontSize: 18,
   },
   pendingNote: {
     color: Colors.accent,

@@ -1,6 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 import { useAuth } from '../../src/context/AuthContext';
@@ -97,9 +101,14 @@ function DateOfBirthPicker({ value, onChange }: { value: string; onChange: (v: s
 
 function AnimatedCard({ delay = 0, children, style }: { delay?: number; children: React.ReactNode; style?: any }) {
   const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.spring(anim, { toValue: 1, useNativeDriver: true, friction: 7, tension: 50, delay }).start();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      anim.setValue(0);
+      const spring = Animated.spring(anim, { toValue: 1, useNativeDriver: true, friction: 7, tension: 50, delay });
+      spring.start();
+      return () => spring.stop();
+    }, [delay])
+  );
   return (
     <Animated.View
       style={[
@@ -158,9 +167,14 @@ export default function ProfileScreen() {
   }, [profile]);
 
   const avatarScale = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.spring(avatarScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 80, delay: 60 }).start();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      avatarScale.setValue(0);
+      const spring = Animated.spring(avatarScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 80, delay: 60 });
+      spring.start();
+      return () => spring.stop();
+    }, [])
+  );
 
   const handleSaveProfile = () => {
     updateProfile(profileForm);
@@ -186,6 +200,30 @@ export default function ProfileScreen() {
     }
   };
 
+  const pickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (result.canceled) return;
+
+    const compressed = await ImageManipulator.manipulateAsync(
+      result.assets[0].uri,
+      [{ resize: { width: 120, height: 120 } }],
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    );
+
+    if (compressed.base64) {
+      updateProfile({ photoBase64: `data:image/jpeg;base64,${compressed.base64}` });
+    }
+  };
+
   const displayName = [profile.firstName, profile.lastName].filter(Boolean).join(' ');
   const initials = [profile.firstName?.[0], profile.lastName?.[0]]
     .filter(Boolean)
@@ -197,7 +235,14 @@ export default function ProfileScreen() {
     : null;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <LinearGradient
+      colors={["#0D4F82", "#1A72B0", "#5BAAD4", "#BDD9EE", "#E5EDF4"]}
+      locations={[0, 0.22, 0.48, 0.70, 1]}
+      style={styles.gradient}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+    >
+      <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
 
         {/* ── Card 1: Identity ─────────────────────────────────── */}
@@ -207,9 +252,15 @@ export default function ProfileScreen() {
             <View style={styles.orbB} />
 
             <View style={styles.identityRow}>
-              <Animated.View style={[styles.avatarCircle, { transform: [{ scale: avatarScale }] }]}>
-                <Text style={styles.avatarInitials}>{initials}</Text>
-              </Animated.View>
+              <Pressable onPress={pickAvatar}>
+                <Animated.View style={[styles.avatarCircle, { transform: [{ scale: avatarScale }] }]}>
+                  {profile.photoBase64 ? (
+                    <Image source={{ uri: profile.photoBase64 }} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={styles.avatarInitials}>{initials}</Text>
+                  )}
+                </Animated.View>
+              </Pressable>
 
               <View style={styles.identityInfo}>
                 <Text style={styles.idEyebrow}>Traveler profile</Text>
@@ -239,7 +290,7 @@ export default function ProfileScreen() {
 
         {/* ── Card 2: General Settings ─────────────────────────── */}
         <AnimatedCard delay={80}>
-          <View style={styles.settingsCard}>
+          <LinearGradient colors={['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.settingsCard}>
             <Text style={styles.cardEyebrow}>Account</Text>
             <Text style={styles.cardTitle}>General Settings</Text>
 
@@ -356,12 +407,12 @@ export default function ProfileScreen() {
                 A reset link was sent to {user?.email || profile.email}
               </Text>
             )}
-          </View>
+          </LinearGradient>
         </AnimatedCard>
 
         {/* ── Card 3: Preferences ──────────────────────────────── */}
         <AnimatedCard delay={160}>
-          <View style={styles.settingsCard}>
+          <LinearGradient colors={['#FFFFFF', '#FFFFFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.settingsCard}>
             <Text style={styles.cardEyebrow}>Travel</Text>
             <Text style={styles.cardTitle}>Preferences</Text>
 
@@ -456,40 +507,21 @@ export default function ProfileScreen() {
               </View>
               <Feather name="chevron-right" size={18} color={Colors.textMuted} />
             </Pressable>
-          </View>
+          </LinearGradient>
         </AnimatedCard>
 
-        {/* ── Travel Signature ─────────────────────────────────── */}
-        <AnimatedCard delay={240}>
-          <View style={styles.signatureCard}>
-            <Text style={styles.cardEyebrow}>Travel signature</Text>
-            <Text style={styles.cardTitle}>Your preference moodboard</Text>
-            <View style={styles.chipWrap}>
-              <View style={styles.chip}>
-                <Text style={styles.chipLabel}>Cabin</Text>
-                <Text style={styles.chipValue}>{profile.cabinStyle}</Text>
-              </View>
-              <View style={styles.chip}>
-                <Text style={styles.chipLabel}>Pace</Text>
-                <Text style={styles.chipValue}>{profile.tripPace}</Text>
-              </View>
-              <View style={[styles.chip, styles.chipFull]}>
-                <Text style={styles.chipLabel}>Booking mode</Text>
-                <Text style={styles.chipValue}>{profile.bookingMode}</Text>
-              </View>
-            </View>
-          </View>
-        </AnimatedCard>
 
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
+  gradient: { flex: 1 },
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: 'transparent',
   },
   container: {
     padding: Spacing.lg,
@@ -539,6 +571,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,248,240,0.12)',
     borderWidth: 1.5,
     borderColor: 'rgba(255,248,240,0.2)',
+  },
+  avatarImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
   },
   avatarInitials: {
     color: Colors.textOnDark,
@@ -596,7 +633,6 @@ const styles = StyleSheet.create({
 
   /* ── Settings card (shared by Card 2 & 3) ── */
   settingsCard: {
-    backgroundColor: Colors.surfaceRaised,
     borderRadius: Radius.xl,
     padding: 18,
     borderWidth: 1,
@@ -682,7 +718,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.borderStrong,
-    backgroundColor: Colors.surfaceSoft,
+    backgroundColor: '#E8F7FF',
     color: Colors.textPrimary,
     fontFamily: Typography.sansMedium,
     fontSize: 15,
@@ -700,7 +736,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 13,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.surfaceSoft,
+    backgroundColor: '#E8F7FF',
     borderWidth: 1,
     borderColor: Colors.border,
   },
@@ -736,7 +772,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     borderWidth: 1,
     borderColor: Colors.borderStrong,
-    backgroundColor: Colors.surfaceSoft,
+    backgroundColor: '#E8F7FF',
   },
   genderPillActive: {
     backgroundColor: Colors.primary,
@@ -753,7 +789,7 @@ const styles = StyleSheet.create({
 
   /* ── Date of birth picker ── */
   dobPanel: {
-    backgroundColor: Colors.surfaceSoft,
+    backgroundColor: '#E8F7FF',
     borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.borderStrong,
@@ -794,7 +830,7 @@ const styles = StyleSheet.create({
     width: '80%',
     paddingVertical: 10,
     borderRadius: Radius.md,
-    backgroundColor: Colors.surfaceRaised,
+    backgroundColor: '#E8F7FF',
     borderWidth: 1.5,
     borderColor: Colors.accent,
     alignItems: 'center',
@@ -814,7 +850,7 @@ const styles = StyleSheet.create({
   prefTile: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: Colors.surfaceSoft,
+    backgroundColor: '#E8F7FF',
     borderRadius: Radius.lg,
     padding: 14,
     borderWidth: 1,
@@ -839,7 +875,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: Colors.surfaceSoft,
+    backgroundColor: '#E8F7FF',
     borderRadius: Radius.lg,
     padding: 14,
     borderWidth: 1,
@@ -875,43 +911,4 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  /* ── Travel signature card ── */
-  signatureCard: {
-    backgroundColor: Colors.surfaceRaised,
-    borderRadius: Radius.xl,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.soft,
-  },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 14,
-  },
-  chip: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: Colors.surfaceSoft,
-    borderRadius: Radius.lg,
-    padding: 14,
-  },
-  chipFull: {
-    flexBasis: '100%',
-    flex: 0,
-  },
-  chipLabel: {
-    color: Colors.textMuted,
-    fontFamily: Typography.sansBold,
-    fontSize: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  chipValue: {
-    color: Colors.textPrimary,
-    fontFamily: Typography.sansSemiBold,
-    fontSize: 15,
-  },
 });

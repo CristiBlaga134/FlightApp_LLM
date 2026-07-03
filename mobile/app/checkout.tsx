@@ -964,7 +964,7 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     borderRadius: 75,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.accent,
     opacity: 0.22,
   },
   heroOrbCool: {
@@ -1105,7 +1105,7 @@ const styles = StyleSheet.create({
   },
   stepPillComplete: {
     backgroundColor: Colors.surfaceSoft,
-    borderColor: Colors.primary,
+    borderColor: Colors.accent,
   },
   stepPillBadge: {
     width: 28,
@@ -1122,8 +1122,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.accent,
   },
   stepPillBadgeComplete: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
   },
   stepPillBadgeText: {
     color: Colors.textSecondary,
@@ -1303,7 +1303,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   breakdownTotalValue: {
-    color: Colors.primaryDeep,
+    color: Colors.accent,
     fontFamily: Typography.display,
     fontSize: 26,
   },
@@ -1348,12 +1348,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.accent,
     borderRadius: Radius.pill,
     paddingVertical: 16,
     paddingHorizontal: 12,
     overflow: 'hidden',
-    ...Shadows.glow,
+    shadowColor: Colors.accent,
+    shadowOpacity: 0.22,
+    shadowRadius: 22,
+    elevation: 10,
   },
   primaryButtonDisabled: {
     opacity: 0.65,
@@ -1396,8 +1399,8 @@ const styles = StyleSheet.create({
     ...Shadows.card,
   },
   confirmationLottie: {
-    width: 160,
-    height: 160,
+    width: 220,
+    height: 220,
     alignSelf: 'center',
   },
   confirmationEyebrow: {

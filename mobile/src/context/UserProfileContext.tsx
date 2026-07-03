@@ -75,7 +75,7 @@ const defaultProfile: UserProfile = {
   gender: '',
   phoneNumber: '',
   dateOfBirth: '',
-  cabinStyle: 'Economy first',
+  cabinStyle: 'Economy',
   tripPace: 'City breaks & weekends',
   bookingMode: 'Flexible suggestions',
   needsAccessibleSeating: false,

@@ -50,3 +50,10 @@ server/debug/
 *.synctex.gz
 *.blg
 *.bbl
+
+# Thesis / presentation materials - not part of the codebase
+Licenta_Documentatie.tex
+Prezentare_*.pptx
+Prezentare_*.md
+Skylin_Prezentare*.pptx
+docs/

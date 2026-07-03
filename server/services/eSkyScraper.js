@@ -413,6 +413,23 @@ async function acceptConsent(page) {
   return true;
 }
 
+async function suppressConsentPermanently(page) {
+  await page.addStyleTag({
+    content: `#usercentrics-root { display: none !important; pointer-events: none !important; }`,
+  });
+  await page.evaluate(() => {
+    const removeConsent = () => {
+      const el = document.querySelector("#usercentrics-root");
+      if (el) el.remove();
+    };
+    removeConsent();
+    new MutationObserver(removeConsent).observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+  });
+}
+
 function normalizeCity(city) {
   if (!city) return city;
   const normalized = String(city).trim().toLowerCase();
@@ -539,6 +556,7 @@ async function resolveESkyAirportOptions(city, side = "origin") {
     if (!consentAccepted) {
       return [];
     }
+    await suppressConsentPermanently(page);
 
     await delay(300);
     await page.evaluate(() => {
@@ -2174,6 +2192,7 @@ async function searchESky(searchQuery) {
       await page.close();
       return null;
     }
+    await suppressConsentPermanently(page);
     await delay(300);
 
     await page.evaluate(() => {
@@ -2187,15 +2206,6 @@ async function searchESky(searchQuery) {
     const comboboxes = await page.$$('[role="combobox"]');
     if (comboboxes.length < 2) {
       console.log("[ESKY] Could not locate origin/destination comboboxes");
-      await page.close();
-      return null;
-    }
-
-    // Consent modals can re-open after initial load; clear again before input interactions.
-    const consentStillOk = await acceptConsent(page);
-    if (!consentStillOk) {
-      console.log("[ESKY] Consent dialog reappeared and is blocking interactions");
-      await saveDiagnostics(page, searchQuery, "consent-reblocked");
       await page.close();
       return null;
     }

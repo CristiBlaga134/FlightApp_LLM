@@ -463,10 +463,10 @@ function AnimatedOfferCard({
 function mapCabinStyleToCabinClass(style: string | null | undefined) {
   const normalized = String(style || "").toLowerCase();
   if (!normalized) return null;
-  if (/first/.test(normalized)) return "first" as const;
-  if (/business/.test(normalized)) return "business" as const;
-  if (/premium/.test(normalized)) return "premium_economy" as const;
   if (/econom/.test(normalized)) return "economy" as const;
+  if (/premium/.test(normalized)) return "premium_economy" as const;
+  if (/business/.test(normalized)) return "business" as const;
+  if (/first/.test(normalized)) return "first" as const;
   return null;
 }
 

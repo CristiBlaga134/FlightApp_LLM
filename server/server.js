@@ -1142,6 +1142,17 @@ function getMentionedCities(message) {
   return found;
 }
 
+const CABIN_CLASS_KEYWORDS = [
+  "economy", "econom", "business", "first class", "clasa intai", "clasa business",
+  "clasa economica", "premium economy", "premium_economy", "business class",
+  "first", "clasa", "cabin", "cabina", "clasa i", "clasa a"
+];
+
+function userMentionsCabinClass(message) {
+  const normalized = stripDiacritics(String(message || "")).toLowerCase();
+  return CABIN_CLASS_KEYWORDS.some((kw) => normalized.includes(kw));
+}
+
 function sanitizeFollowupExtraction(current, activeFields) {
   if (!current || !Array.isArray(activeFields) || activeFields.length !== 1) {
     return current;
@@ -1591,6 +1602,12 @@ extracted = applyExplicitDateReply(
 );
 extracted = applyExplicitAirportReply(extracted, pendingFields, userMessage, sessionState);
 extracted = sanitizeFollowupExtraction(extracted, pendingFields);
+
+if (extracted.cabinClass && !userMentionsCabinClass(userMessage)) {
+  console.log(`[LLM] cabinClass "${extracted.cabinClass}" ignored — not mentioned by user`);
+  extracted.cabinClass = null;
+}
+
 console.log("Normalized extracted:",extracted);
 
 if (isFollowup && pendingFields.length === 1 && (pendingFields[0] === "originCity" || pendingFields[0] === "destinationCity")) {

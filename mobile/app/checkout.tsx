@@ -556,7 +556,12 @@ export default function CheckoutScreen() {
               }
               autoPlay
               loop
-              style={styles.confirmationLottie}
+              style={[
+                styles.confirmationLottie,
+                paymentResult.paymentSession.status === 'processing'
+                  ? styles.confirmationLottieSquare
+                  : null,
+              ]}
             />
             <Text style={styles.confirmationEyebrow}>
               {paymentResult.paymentSession.status === 'processing' ? 'Payment authorized' : 'Booking confirmed'}
@@ -1399,9 +1404,14 @@ const styles = StyleSheet.create({
     ...Shadows.card,
   },
   confirmationLottie: {
-    width: 220,
-    height: 220,
+    width: '100%',
+    aspectRatio: 700 / 290,
     alignSelf: 'center',
+  },
+  confirmationLottieSquare: {
+    width: 180,
+    maxWidth: 180,
+    aspectRatio: 1,
   },
   confirmationEyebrow: {
     color: Colors.accent,

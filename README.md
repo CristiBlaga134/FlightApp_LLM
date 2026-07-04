@@ -3,12 +3,9 @@
 ## 1. Repository
 
 - **Adresă:** https://github.com/CristiBlaga134/FlightApp_LLM
-- **Vizibilitate:** public
-- **Conținut:** întregul cod sursă al aplicației. Fișierele binare compilate nu sunt incluse - `node_modules/`, proiectele native generate (`mobile/android/`, `mobile/ios/`), bundle-urile (`mobile/dist/`), log-urile și cheile sunt excluse prin [`.gitignore`](.gitignore).
-
 ## 2. Pași de compilare
 
-Aplicația este scrisă în JavaScript / TypeScript și nu necesită un pas separat de compilare pentru a fi rulată: backend-ul este Node.js (rulează direct), iar clientul mobil (TypeScript) este transpilat automat de bundler-ul Expo / Metro la lansare. Compilarea proiectului constă în clonarea codului sursă și instalarea dependințelor fiecărui modul:
+Aplicația este scrisă în JavaScript / TypeScript și nu necesită un pas separat de compilare pentru a fi rulată: backend-ul este Node.js (rulează direct), iar clientul mobil (TypeScript) este compilat automat de bundler-ul Expo / Metro la lansare. Compilarea proiectului constă în clonarea codului sursă și instalarea dependințelor fiecărui modul:
 
 ```bash
 # 1. Clonarea repository-ului
@@ -24,13 +21,6 @@ cd ..
 cd mobile
 npm install
 cd ..
-```
-
-Opțional, generarea unui binar nativ (APK / IPA) pentru clientul mobil se face cu EAS Build:
-
-```bash
-cd mobile
-npx eas build -p android
 ```
 
 ## 3. Pași de instalare și lansare

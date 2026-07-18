@@ -151,7 +151,7 @@ function isExpiredCard(expiryMonthValue: string, expiryYearValue: string) {
   const expiryMonth = Number(String(expiryMonthValue || '').replace(/\D/g, '').slice(0, 2));
   const expiryYear = normalizeExpiryYear(expiryYearValue);
 
-  if (!Number.isInteger(expiryMonth) || !Number.isInteger(expiryYear)) {
+  if (expiryYear === null || !Number.isInteger(expiryMonth) || !Number.isInteger(expiryYear)) {
     return false;
   }
 
@@ -311,8 +311,8 @@ export default function CheckoutScreen() {
     expiryMonth: '12',
     expiryYear: '2029',
     cvc: '123',
-    country: 'Romania',
-    city: 'Bucharest',
+    country: '',
+    city: '',
     line1: '',
     postalCode: '',
   });
@@ -341,8 +341,8 @@ export default function CheckoutScreen() {
     const serviceFee = Math.min(18, Math.max(8, Math.round(offer.price * 0.07)));
     return {
       serviceFee,
-      baseFare: Math.max(0, offer.price - serviceFee),
-      total: offer.price,
+      baseFare: offer.price,
+      total: offer.price + serviceFee,
     };
   }, [offer]);
 

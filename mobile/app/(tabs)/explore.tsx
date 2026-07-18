@@ -88,7 +88,7 @@ function normalizeSupplierLabel(label: string): string {
     .replace(/:(?!\s)/g, ': ');   // "preţ:Geantă" → "preţ: Geantă"
 }
 
-function AnimatedCard({ delay = 0, children, style }: { delay?: number; children: React.ReactNode; style?: any }) {
+function AnimatedCard({ delay = 0, children, style, onLayout }: { delay?: number; children: React.ReactNode; style?: any; onLayout?: (e: any) => void }) {
   const anim = useRef(new Animated.Value(0)).current;
   useFocusEffect(
     useCallback(() => {
@@ -106,6 +106,7 @@ function AnimatedCard({ delay = 0, children, style }: { delay?: number; children
   );
   return (
     <Animated.View
+      onLayout={onLayout}
       style={[
         style,
         {
@@ -171,10 +172,12 @@ export default function TripsScreen() {
 
   useEffect(() => {
     if (!scrollTo) return;
-    const y = sectionY.current[scrollTo];
-    if (y != null) {
-      setTimeout(() => scrollViewRef.current?.scrollTo({ y, animated: true }), 350);
-    }
+    const t = setTimeout(() => {
+      const y = sectionY.current[scrollTo];
+      if (y != null) scrollViewRef.current?.scrollTo({ y, animated: true });
+      router.setParams({ scrollTo: '' });
+    }, 350);
+    return () => clearTimeout(t);
   }, [scrollTo]);
 
   const launchPrompt = (prompt: string) => {
@@ -216,8 +219,8 @@ export default function TripsScreen() {
           </View>
         </AnimatedCard>
 
-        <AnimatedCard delay={80}>
-          <View style={styles.sectionHeader} onLayout={(e) => { sectionY.current['bookings'] = e.nativeEvent.layout.y; }}>
+        <AnimatedCard delay={80} onLayout={(e: any) => { sectionY.current['bookings'] = e.nativeEvent.layout.y; }}>
+          <View style={styles.sectionHeader}>
             <Text style={styles.sectionEyebrow}>Booked trips</Text>
             <Text style={styles.sectionTitle}>Recent checkout activity</Text>
           </View>
@@ -286,8 +289,8 @@ export default function TripsScreen() {
           ))}
         </View>
 
-        <AnimatedCard delay={480}>
-          <View style={styles.sectionHeader} onLayout={(e) => { sectionY.current['searches'] = e.nativeEvent.layout.y; }}>
+        <AnimatedCard delay={480} onLayout={(e: any) => { sectionY.current['searches'] = e.nativeEvent.layout.y; }}>
+          <View style={styles.sectionHeader}>
             <Text style={styles.sectionEyebrow}>Recent searches</Text>
             <Text style={styles.sectionTitle}>Return to a route</Text>
           </View>

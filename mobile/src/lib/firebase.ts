@@ -1,6 +1,10 @@
 import { Platform } from "react-native";
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { Auth, getAuth, getReactNativePersistence, initializeAuth } from "firebase/auth";
+import { Auth, getAuth, initializeAuth } from "firebase/auth";
+// getReactNativePersistence exists at runtime on the react-native entry of
+// firebase/auth, but the browser type definitions do not declare it.
+// @ts-expect-error
+import { getReactNativePersistence } from "firebase/auth";
 import {
   Firestore,
   getFirestore,

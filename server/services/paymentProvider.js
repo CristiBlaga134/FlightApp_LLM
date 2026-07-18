@@ -41,6 +41,12 @@ const TEST_CARDS = [
     note: "Simulates insufficient funds",
     expectedEvent: "payment_intent.payment_failed",
   },
+  {
+    label: "Expired",
+    number: "4000 0000 0000 0069",
+    note: "Simulates an expired card",
+    expectedEvent: "payment_intent.payment_failed",
+  },
 ];
 
 const COUNTRY_CODE_MAP = {
@@ -112,7 +118,7 @@ function toCountryCode(value) {
 }
 
 function buildMockBookingReference() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ123456789";
   let ref = "FA";
   for (let i = 0; i < 6; i += 1) ref += alphabet[Math.floor(Math.random() * alphabet.length)];
   return ref;
@@ -339,8 +345,18 @@ function resolveMockPaymentOutcome(cardNumber) {
 
 // ── Stripe path ───────────────────────────────────────────────────────────────
 
+// Service fee added on top of the scraped supplier price. Must stay in sync
+// with the breakdown shown in mobile/app/checkout.tsx (priceBreakdown).
+function computeServiceFee(price) {
+  return Math.min(18, Math.max(8, Math.round(price * 0.07)));
+}
+
+function computeChargedAmount(offer) {
+  return offer.price + computeServiceFee(offer.price);
+}
+
 async function createStripePaymentIntent(offer, customerEmail) {
-  const amountInCents = Math.round(offer.price * 100);
+  const amountInCents = Math.round(computeChargedAmount(offer) * 100);
   return stripe.paymentIntents.create({
     amount: amountInCents,
     currency: offer.currency.toLowerCase(),
@@ -447,7 +463,7 @@ async function createPaymentSession(body) {
     id: createId("ps"),
     provider: ACTIVE_PROVIDER_NAME,
     status: "requires_payment_method",
-    amount: offer.price,
+    amount: computeChargedAmount(offer),
     currency: offer.currency,
     customerEmail,
     customerName,
